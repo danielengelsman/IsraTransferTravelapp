@@ -22,8 +22,7 @@
     "autoprefixer": "latest",
     "eslint": "latest",
     "postcss": "latest",
-    "tailwindcss": "latest",
-    "typescript": "latest",
-    "@tailwindcss/postcss": "latest"
+    "tailwindcss": "3.4.10",
+    "typescript": "latest"
   }
 }
