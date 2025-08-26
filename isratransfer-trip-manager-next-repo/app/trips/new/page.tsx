@@ -3,13 +3,13 @@ import { createClient } from '@/lib/supabase/server'
 import TripForm from '@/components/TripForm'
 
 export default async function NewTripPage() {
-  const supabase = createClient()
+  const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login?next=/trips/new')
 
   async function createTrip(formData: FormData) {
     'use server'
-    const supabase = createClient()
+    const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return redirect('/login?next=/trips/new')
     const payload = {
