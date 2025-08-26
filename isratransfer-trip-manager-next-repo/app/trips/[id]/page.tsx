@@ -8,7 +8,7 @@ export default async function TripDetail({ params }: { params: Promise<{ id: str
   // Next.js 15 supplies params as a Promise in some cases; await it:
   const { id } = await params
 
-  const supabase = createClient()
+  const supabase = await createClient()
   const {
     data: { user },
   } = await supabase.auth.getUser()
@@ -30,7 +30,7 @@ export default async function TripDetail({ params }: { params: Promise<{ id: str
 
   async function saveTrip(formData: FormData) {
     'use server'
-    const supabase = createClient()
+   const supabase = await createClient()
     const payload = {
       title: String(formData.get('title') || ''),
       location: String(formData.get('location') || ''),
