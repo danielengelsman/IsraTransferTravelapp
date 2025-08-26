@@ -23,6 +23,7 @@
     "eslint": "latest",
     "postcss": "latest",
     "tailwindcss": "latest",
-    "typescript": "latest"
+    "typescript": "latest",
+    "@tailwindcss/postcss": "latest"
   }
 }
