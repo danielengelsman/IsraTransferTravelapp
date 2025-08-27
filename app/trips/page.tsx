@@ -1,76 +1,34 @@
 'use client'
 export const dynamic = 'force-dynamic'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
 
-type Trip = {
-  id: string
-  title: string | null
-  location: string | null
-  start_date: string | null
-  end_date: string | null
-}
+type Trip = { id: string; title: string | null; location: string | null; start_date: string | null; end_date: string | null }
 
 export default function TripsPage() {
-  const sb = createClient()
-  const [status, setStatus] = useState<'checking' | 'ready' | 'need-login' | 'error'>('checking')
+  const sb = useMemo(() => createClient(), [])
+  const [status, setStatus] = useState<'loading'|'need-login'|'ready'|'error'>('loading')
   const [trips, setTrips] = useState<Trip[]>([])
   const [message, setMessage] = useState('')
 
   useEffect(() => {
-    // ✅ Add explicit types so TS is happy
-    let unsub: (() => void) | undefined
-    let timeout: ReturnType<typeof setTimeout>
-
-    async function loadTrips() {
-      try {
-        const { data, error } = await sb
-          .from('trips')
-          .select('*')
-          .order('start_date', { ascending: true })
-        if (error) throw error
-        setTrips((data as Trip[]) || [])
-        setStatus('ready')
-      } catch (e: any) {
-        setMessage(e?.message || 'Failed to load trips')
-        setStatus('error')
-      }
-    }
-
+    let cancelled = false
     ;(async () => {
       const { data: { user } } = await sb.auth.getUser()
-      if (user) {
-        await loadTrips()
-        return
-      }
-      const { data: listener } = sb.auth.onAuthStateChange((_evt, session) => {
-        if (session?.user) {
-          clearTimeout(timeout)
-          loadTrips()
-        }
-      })
-      // ✅ Define unsubscribe as a function
-      unsub = () => listener.subscription.unsubscribe()
-      timeout = setTimeout(() => setStatus('need-login'), 5000)
+      if (!user) { if (!cancelled) setStatus('need-login'); return }
+      const { data, error } = await sb.from('trips').select('*').order('start_date', { ascending: true })
+      if (cancelled) return
+      if (error) { setMessage(error.message || 'Failed to load trips'); setStatus('error'); return }
+      setTrips((data as Trip[]) || [])
+      setStatus('ready')
     })()
-
-    return () => {
-      try { unsub?.() } catch {}
-      clearTimeout(timeout)
-    }
+    return () => { cancelled = true }
   }, [sb])
 
-  if (status === 'checking') return <div className="card">Checking your session…</div>
-  if (status === 'need-login') {
-    return (
-      <div className="card">
-        <div className="mb-2">You’re not logged in.</div>
-        <Link className="btn-primary" href="/login?next=/trips">Go to Login</Link>
-      </div>
-    )
-  }
+  if (status === 'loading') return <div className="card">Checking your session…</div>
+  if (status === 'need-login') return <div className="card"><div className="mb-2">You’re not logged in.</div><Link className="btn-primary" href="/login?next=/trips">Go to Login</Link></div>
   if (status === 'error') return <div className="card text-red-600">{message}</div>
 
   return (
