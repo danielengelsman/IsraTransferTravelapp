@@ -13,8 +13,8 @@ export default function TripsPage() {
 
   useEffect(() => {
     ;(async () => {
-      const { data: { session } } = await sb.auth.getSession()
-      if (!session) {
+      const { data: { user } } = await sb.auth.getUser()
+      if (!user) {
         window.location.href = '/login?next=/trips'
         return
       }
