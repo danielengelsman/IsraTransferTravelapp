@@ -183,3 +183,22 @@ a:hover { text-decoration: underline; }
 .space-y-6 > * + * { margin-top: 16px; }
 .block { display:block; }
 .underline { text-decoration: underline; }
+
+/* ===== Itinerary timeline ===== */
+.timeline { display:flex; flex-direction:column; gap:12px; }
+.timeline-day { font-weight:700; margin:12px 0 6px; }
+.event-card { border:1px solid var(--border); border-radius:14px; background: var(--card-bg); padding:12px; }
+.event-title { font-weight:700; }
+.event-sub { color: var(--muted); font-size:12px; }
+
+/* ===== Attachments list ===== */
+.files { display:flex; flex-direction:column; gap:8px; }
+.file-row {
+  display:flex; align-items:center; justify-content:space-between;
+  border:1px solid var(--border); border-radius:12px; padding:8px 10px; background:var(--card-bg);
+}
+.file-row a { text-decoration:none; }
+.file-actions { display:flex; gap:8px; }
+
+/* small helper */
+.input[type="file"] { padding:6px; background:#fff; border:1px solid var(--border); border-radius:10px; }
