@@ -174,3 +174,12 @@ a:hover { text-decoration: underline; }
 
 /* icons stay small everywhere */
 .card svg,.navbar svg,.section-title svg,.btn svg,.row svg { width:20px; height:20px; flex:0 0 20px; }
+/* ===== Two-column trip dashboard ===== */
+.trip-grid { display:grid; grid-template-columns: 1fr; gap:16px; align-items:start; }
+@media (min-width: 960px) { .trip-grid { grid-template-columns: 2fr 1fr; } }
+.stack { display:flex; flex-direction:column; gap:16px; }
+
+/* simple spacing + tiny utilities (no Tailwind needed) */
+.space-y-6 > * + * { margin-top: 16px; }
+.block { display:block; }
+.underline { text-decoration: underline; }
