@@ -31,10 +31,11 @@ export default function InvoiceUpload({ tripId, section, itemId }: Props) {
       const { data } = sb.storage.from('invoices').getPublicUrl(path)
       const url = data.publicUrl
 
-      // Record in invoices table
+      // Record in invoices table (✅ now includes "name")
       const payload: any = {
         trip_id: tripId,
         section,
+        name: file.name,          // <— add this
         file_path: path,
         file_url: url
       }
