@@ -1,6 +1,6 @@
 'use client'
 export const dynamic = 'force-dynamic'
-
+import { useMe } from '@/lib/useMe'
 import { useEffect, useMemo, useState } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
@@ -42,6 +42,9 @@ export default function TripDetailPage() {
   const params = useParams<{id:string}>()
   const id = params?.id?.toString()
   const sb = useMemo(()=>createClient(),[])
+  const me = useMe()
+const isOwner = me && trip && me.id === trip.created_by
+const canEdit = me && (me.role==='admin' || me.role==='finance' || (isOwner && trip?.status !== 'approved'))
   const [status,setStatus]=useState<'loading'|'need-login'|'ready'|'not-found'|'error'>('loading')
   const [msg,setMsg]=useState('')
   const [trip,setTrip]=useState<Trip|null>(null)
