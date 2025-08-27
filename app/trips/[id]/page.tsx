@@ -77,34 +77,37 @@ export default function TripDetailPage() {
   const [trans, setTrans] = useState<Transport[]>([])
   const [invoices, setInvoices] = useState<Invoice[]>([])
 
-  // form state
+  // Show/hide forms
+  const [showFlightForm, setShowFlightForm] = useState(false)
+  const [showAccForm, setShowAccForm] = useState(false)
+  const [showTransForm, setShowTransForm] = useState(false)
+
+  // Description form
   const [desc, setDesc] = useState('')
 
-  // flight form
+  // Flight form
   const [fType, setFType] = useState<'international' | 'internal'>('international')
   const [carrier, setCarrier] = useState(''); const [fno, setFno] = useState('')
   const [depA, setDepA] = useState(''); const [arrA, setArrA] = useState('')
   const [depT, setDepT] = useState(''); const [arrT, setArrT] = useState('')
 
-  // accommodation form
+  // Accommodation form
   const [accName, setAccName] = useState(''); const [accAddr, setAccAddr] = useState('')
   const [accIn, setAccIn] = useState(''); const [accOut, setAccOut] = useState(''); const [accRef, setAccRef] = useState('')
 
-  // transport form
+  // Transport form
   const [tType, setTType] = useState<'car_hire'|'toll'|'train'|'taxi'|'other'>('car_hire')
   const [tCompany, setTCompany] = useState(''); const [tFrom, setTFrom] = useState(''); const [tTo, setTTo] = useState('')
   const [tStart, setTStart] = useState(''); const [tEnd, setTEnd] = useState(''); const [tCost, setTCost] = useState('')
 
   async function reloadAll() {
     if (!id) return
-    // trip
     const { data: t, error: e1 } = await sb.from('trips').select('*').eq('id', id).single()
     if (e1) { setMsg(e1.message); setStatus('error'); return }
     if (!t) { setStatus('not-found'); return }
     setTrip(t as Trip)
     setDesc((t as Trip).description || '')
 
-    // children
     const [fl, ac, tr, inv] = await Promise.all([
       sb.from('flights').select('*').eq('trip_id', id).order('depart_time', { ascending: true }),
       sb.from('accommodations').select('*').eq('trip_id', id).order('check_in', { ascending: true }),
@@ -192,53 +195,62 @@ export default function TripDetailPage() {
 
       {/* Flights */}
       <div className="space-y-2">
-        <div className="text-xl font-semibold">Flights</div>
-        <div className="card grid md:grid-cols-2 gap-3">
-          <label className="block">
-            <span className="label">Type</span>
-            <select className="input" value={fType} onChange={e=>setFType(e.target.value as any)}>
-              <option value="international">International</option>
-              <option value="internal">Internal</option>
-            </select>
-          </label>
-          <label className="block">
-            <span className="label">Carrier</span>
-            <input className="input" value={carrier} onChange={e=>setCarrier(e.target.value)} />
-          </label>
-          <label className="block">
-            <span className="label">Flight #</span>
-            <input className="input" value={fno} onChange={e=>setFno(e.target.value)} />
-          </label>
-          <label className="block">
-            <span className="label">Depart airport</span>
-            <input className="input" value={depA} onChange={e=>setDepA(e.target.value)} />
-          </label>
-          <label className="block">
-            <span className="label">Arrive airport</span>
-            <input className="input" value={arrA} onChange={e=>setArrA(e.target.value)} />
-          </label>
-          <label className="block">
-            <span className="label">Depart time</span>
-            <input className="input" type="datetime-local" value={depT} onChange={e=>setDepT(e.target.value)} />
-          </label>
-          <label className="block">
-            <span className="label">Arrive time</span>
-            <input className="input" type="datetime-local" value={arrT} onChange={e=>setArrT(e.target.value)} />
-          </label>
-          <div className="flex items-end">
-            <button className="btn-primary" onClick={async ()=>{
-              const { error } = await sb.from('flights').insert({
-                trip_id: id, flight_type: fType, carrier, flight_number: fno,
-                depart_airport: depA, arrive_airport: arrA,
-                depart_time: depT ? new Date(depT).toISOString() : null,
-                arrive_time: arrT ? new Date(arrT).toISOString() : null
-              })
-              if (error) { alert(error.message); return }
-              setCarrier(''); setFno(''); setDepA(''); setArrA(''); setDepT(''); setArrT('')
-              await reloadAll()
-            }}>Add flight</button>
-          </div>
+        <div className="flex items-center justify-between">
+          <div className="text-xl font-semibold">Flights</div>
+          <button className="btn" onClick={() => setShowFlightForm(s => !s)}>
+            {showFlightForm ? 'Cancel' : 'Add flight'}
+          </button>
         </div>
+
+        {showFlightForm && (
+          <div className="card grid md:grid-cols-2 gap-3">
+            <label className="block">
+              <span className="label">Type</span>
+              <select className="input" value={fType} onChange={e=>setFType(e.target.value as any)}>
+                <option value="international">International</option>
+                <option value="internal">Internal</option>
+              </select>
+            </label>
+            <label className="block">
+              <span className="label">Carrier</span>
+              <input className="input" value={carrier} onChange={e=>setCarrier(e.target.value)} />
+            </label>
+            <label className="block">
+              <span className="label">Flight #</span>
+              <input className="input" value={fno} onChange={e=>setFno(e.target.value)} />
+            </label>
+            <label className="block">
+              <span className="label">Depart airport</span>
+              <input className="input" value={depA} onChange={e=>setDepA(e.target.value)} />
+            </label>
+            <label className="block">
+              <span className="label">Arrive airport</span>
+              <input className="input" value={arrA} onChange={e=>setArrA(e.target.value)} />
+            </label>
+            <label className="block">
+              <span className="label">Depart time</span>
+              <input className="input" type="datetime-local" value={depT} onChange={e=>setDepT(e.target.value)} />
+            </label>
+            <label className="block">
+              <span className="label">Arrive time</span>
+              <input className="input" type="datetime-local" value={arrT} onChange={e=>setArrT(e.target.value)} />
+            </label>
+            <div className="flex items-end">
+              <button className="btn-primary" onClick={async ()=>{
+                const { error } = await sb.from('flights').insert({
+                  trip_id: id, flight_type: fType, carrier, flight_number: fno,
+                  depart_airport: depA, arrive_airport: arrA,
+                  depart_time: depT ? new Date(depT).toISOString() : null,
+                  arrive_time: arrT ? new Date(arrT).toISOString() : null
+                })
+                if (error) { alert(error.message); return }
+                setCarrier(''); setFno(''); setDepA(''); setArrA(''); setDepT(''); setArrT('')
+                setShowFlightForm(false)
+                await reloadAll()
+              }}>Add flight</button>
+            </div>
+          </div>
+        )}
 
         <div className="grid md:grid-cols-2 gap-3">
           {flights.map(f => (
@@ -251,7 +263,7 @@ export default function TripDetailPage() {
               <div className="text-sm">{f.depart_time || '—'} → {f.arrive_time || '—'}</div>
               {invFor('flight', f.id).length > 0 && (
                 <div className="text-sm mt-2">
-                  Invoices:{" "}
+                  Invoices:{' '}
                   {invFor('flight', f.id).map(i => (
                     <a key={i.id} href={i.file_url || '#'} target="_blank" className="underline mr-2">view</a>
                   ))}
@@ -265,40 +277,49 @@ export default function TripDetailPage() {
 
       {/* Accommodation */}
       <div className="space-y-2">
-        <div className="text-xl font-semibold">Accommodation</div>
-        <div className="card grid md:grid-cols-2 gap-3">
-          <label className="block">
-            <span className="label">Name</span>
-            <input className="input" value={accName} onChange={e=>setAccName(e.target.value)} />
-          </label>
-          <label className="block">
-            <span className="label">Address</span>
-            <input className="input" value={accAddr} onChange={e=>setAccAddr(e.target.value)} />
-          </label>
-          <label className="block">
-            <span className="label">Check-in</span>
-            <input className="input" type="date" value={accIn} onChange={e=>setAccIn(e.target.value)} />
-          </label>
-          <label className="block">
-            <span className="label">Check-out</span>
-            <input className="input" type="date" value={accOut} onChange={e=>setAccOut(e.target.value)} />
-          </label>
-          <label className="block">
-            <span className="label">Booking ref</span>
-            <input className="input" value={accRef} onChange={e=>setAccRef(e.target.value)} />
-          </label>
-          <div className="flex items-end">
-            <button className="btn-primary" onClick={async ()=>{
-              const { error } = await sb.from('accommodations').insert({
-                trip_id: id, name: accName, address: accAddr,
-                check_in: accIn || null, check_out: accOut || null, booking_ref: accRef || null
-              })
-              if (error) { alert(error.message); return }
-              setAccName(''); setAccAddr(''); setAccIn(''); setAccOut(''); setAccRef('')
-              await reloadAll()
-            }}>Add accommodation</button>
-          </div>
+        <div className="flex items-center justify-between">
+          <div className="text-xl font-semibold">Accommodation</div>
+          <button className="btn" onClick={() => setShowAccForm(s => !s)}>
+            {showAccForm ? 'Cancel' : 'Add accommodation'}
+          </button>
         </div>
+
+        {showAccForm && (
+          <div className="card grid md:grid-cols-2 gap-3">
+            <label className="block">
+              <span className="label">Name</span>
+              <input className="input" value={accName} onChange={e=>setAccName(e.target.value)} />
+            </label>
+            <label className="block">
+              <span className="label">Address</span>
+              <input className="input" value={accAddr} onChange={e=>setAccAddr(e.target.value)} />
+            </label>
+            <label className="block">
+              <span className="label">Check-in</span>
+              <input className="input" type="date" value={accIn} onChange={e=>setAccIn(e.target.value)} />
+            </label>
+            <label className="block">
+              <span className="label">Check-out</span>
+              <input className="input" type="date" value={accOut} onChange={e=>setAccOut(e.target.value)} />
+            </label>
+            <label className="block">
+              <span className="label">Booking ref</span>
+              <input className="input" value={accRef} onChange={e=>setAccRef(e.target.value)} />
+            </label>
+            <div className="flex items-end">
+              <button className="btn-primary" onClick={async ()=>{
+                const { error } = await sb.from('accommodations').insert({
+                  trip_id: id, name: accName, address: accAddr,
+                  check_in: accIn || null, check_out: accOut || null, booking_ref: accRef || null
+                })
+                if (error) { alert(error.message); return }
+                setAccName(''); setAccAddr(''); setAccIn(''); setAccOut(''); setAccRef('')
+                setShowAccForm(false)
+                await reloadAll()
+              }}>Add accommodation</button>
+            </div>
+          </div>
+        )}
 
         <div className="grid md:grid-cols-2 gap-3">
           {accs.map(a => (
@@ -311,7 +332,7 @@ export default function TripDetailPage() {
               <div className="text-sm">{a.check_in || '—'} → {a.check_out || '—'}</div>
               {invFor('accommodation', a.id).length > 0 && (
                 <div className="text-sm mt-2">
-                  Invoices:{" "}
+                  Invoices:{' '}
                   {invFor('accommodation', a.id).map(i => (
                     <a key={i.id} href={i.file_url || '#'} target="_blank" className="underline mr-2">view</a>
                   ))}
@@ -325,57 +346,66 @@ export default function TripDetailPage() {
 
       {/* Transportation */}
       <div className="space-y-2">
-        <div className="text-xl font-semibold">Transportation</div>
-        <div className="card grid md:grid-cols-2 gap-3">
-          <label className="block">
-            <span className="label">Type</span>
-            <select className="input" value={tType} onChange={e=>setTType(e.target.value as any)}>
-              <option value="car_hire">Car hire</option>
-              <option value="toll">Toll</option>
-              <option value="train">Train</option>
-              <option value="taxi">Taxi</option>
-              <option value="other">Other</option>
-            </select>
-          </label>
-          <label className="block">
-            <span className="label">Company</span>
-            <input className="input" value={tCompany} onChange={e=>setTCompany(e.target.value)} />
-          </label>
-          <label className="block">
-            <span className="label">Pickup</span>
-            <input className="input" value={tFrom} onChange={e=>setTFrom(e.target.value)} />
-          </label>
-          <label className="block">
-            <span className="label">Dropoff</span>
-            <input className="input" value={tTo} onChange={e=>setTTo(e.target.value)} />
-          </label>
-          <label className="block">
-            <span className="label">Start time</span>
-            <input className="input" type="datetime-local" value={tStart} onChange={e=>setTStart(e.target.value)} />
-          </label>
-          <label className="block">
-            <span className="label">End time</span>
-            <input className="input" type="datetime-local" value={tEnd} onChange={e=>setTEnd(e.target.value)} />
-          </label>
-          <label className="block">
-            <span className="label">Cost (optional)</span>
-            <input className="input" type="number" step="0.01" value={tCost} onChange={e=>setTCost(e.target.value)} />
-          </label>
-          <div className="flex items-end">
-            <button className="btn-primary" onClick={async ()=>{
-              const { error } = await sb.from('transports').insert({
-                trip_id: id, type: tType, company: tCompany || null,
-                pickup_location: tFrom || null, dropoff_location: tTo || null,
-                start_time: tStart ? new Date(tStart).toISOString() : null,
-                end_time: tEnd ? new Date(tEnd).toISOString() : null,
-                cost: tCost ? Number(tCost) : null
-              })
-              if (error) { alert(error.message); return }
-              setTCompany(''); setTFrom(''); setTTo(''); setTStart(''); setTEnd(''); setTCost('')
-              await reloadAll()
-            }}>Add transportation</button>
-          </div>
+        <div className="flex items-center justify-between">
+          <div className="text-xl font-semibold">Transportation</div>
+          <button className="btn" onClick={() => setShowTransForm(s => !s)}>
+            {showTransForm ? 'Cancel' : 'Add transportation'}
+          </button>
         </div>
+
+        {showTransForm && (
+          <div className="card grid md:grid-cols-2 gap-3">
+            <label className="block">
+              <span className="label">Type</span>
+              <select className="input" value={tType} onChange={e=>setTType(e.target.value as any)}>
+                <option value="car_hire">Car hire</option>
+                <option value="toll">Toll</option>
+                <option value="train">Train</option>
+                <option value="taxi">Taxi</option>
+                <option value="other">Other</option>
+              </select>
+            </label>
+            <label className="block">
+              <span className="label">Company</span>
+              <input className="input" value={tCompany} onChange={e=>setTCompany(e.target.value)} />
+            </label>
+            <label className="block">
+              <span className="label">Pickup</span>
+              <input className="input" value={tFrom} onChange={e=>setTFrom(e.target.value)} />
+            </label>
+            <label className="block">
+              <span className="label">Dropoff</span>
+              <input className="input" value={tTo} onChange={e=>setTTo(e.target.value)} />
+            </label>
+            <label className="block">
+              <span className="label">Start time</span>
+              <input className="input" type="datetime-local" value={tStart} onChange={e=>setTStart(e.target.value)} />
+            </label>
+            <label className="block">
+              <span className="label">End time</span>
+              <input className="input" type="datetime-local" value={tEnd} onChange={e=>setTEnd(e.target.value)} />
+            </label>
+            <label className="block">
+              <span className="label">Cost (optional)</span>
+              <input className="input" type="number" step="0.01" value={tCost} onChange={e=>setTCost(e.target.value)} />
+            </label>
+            <div className="flex items-end">
+              <button className="btn-primary" onClick={async ()=>{
+                const { error } = await sb.from('transports').insert({
+                  trip_id: id, type: tType, company: tCompany || null,
+                  pickup_location: tFrom || null, dropoff_location: tTo || null,
+                  start_time: tStart ? new Date(tStart).toISOString() : null,
+                  end_time: tEnd ? new Date(tEnd).toISOString() : null,
+                  cost: tCost ? Number(tCost) : null
+                })
+                if (error) { alert(error.message); return }
+                setTCompany(''); setTFrom(''); setTTo(''); setTStart(''); setTEnd(''); setTCost('')
+                setShowTransForm(false)
+                await reloadAll()
+              }}>Add transportation</button>
+            </div>
+          </div>
+        )}
 
         <div className="grid md:grid-cols-2 gap-3">
           {trans.map(t => (
@@ -388,7 +418,7 @@ export default function TripDetailPage() {
               <div className="text-sm">{t.start_time || '—'} → {t.end_time || '—'}</div>
               {invFor('transport', t.id).length > 0 && (
                 <div className="text-sm mt-2">
-                  Invoices:{" "}
+                  Invoices:{' '}
                   {invFor('transport', t.id).map(i => (
                     <a key={i.id} href={i.file_url || '#'} target="_blank" className="underline mr-2">view</a>
                   ))}
@@ -402,3 +432,4 @@ export default function TripDetailPage() {
     </div>
   )
 }
+
