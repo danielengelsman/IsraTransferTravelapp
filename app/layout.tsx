@@ -13,23 +13,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <body>
-        {/* Brand hairline */}
         <div className="gradient-bar" />
-
-        {/* Header */}
         <header className="navbar">
           <div className="navbar-inner">
             <Link href="/trips" className="brand no-underline">
-              <Image
-                src="/isratransfer-logo.png"
-                alt="IsraTransfer"
-                width={130}
-                height={28}
-                priority
-              />
+              <Image src="/isratransfer-logo.png" alt="IsraTransfer" width={130} height={28} priority />
               <span className="brand-pill">internal</span>
             </Link>
-
             <nav className="flex items-center gap-2">
               <Link className="btn-ghost" href="/trips">Trips</Link>
               <Link className="btn" href="/trips/new">New trip</Link>
@@ -38,9 +28,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </nav>
           </div>
         </header>
-
         <main className="container-page py-6">{children}</main>
       </body>
+    </html>
+  )
+}
     </html>
   )
 }
