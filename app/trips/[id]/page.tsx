@@ -1,5 +1,6 @@
 'use client'
 export const dynamic = 'force-dynamic'
+
 import { useMe } from '@/lib/useMe'
 import { useEffect, useMemo, useState } from 'react'
 import { useParams } from 'next/navigation'
@@ -8,9 +9,18 @@ import { createClient } from '@/lib/supabase/client'
 import InvoiceUpload from '@/components/InvoiceUpload'
 import { IconPlane, IconHotel, IconCar, IconPlus } from '@/components/Icons'
 
+type TripStatus = 'draft' | 'awaiting_approval' | 'approved'
+
 type Trip = {
-  id:string; title:string|null; description:string|null; location:string|null;
-  start_date:string|null; end_date:string|null; itinerary?: any[]
+  id: string
+  title: string | null
+  description: string | null
+  location: string | null
+  start_date: string | null
+  end_date: string | null
+  status: TripStatus            // ← added
+  created_by: string | null     // ← added
+  itinerary?: any[]
 }
 
 type Flight = {
@@ -26,9 +36,9 @@ type TripEvent = {
   id:string
   title:string
   type:'Meeting'|'Call'|'Booth'|'Flight'|'Other'
-  date:string          // YYYY-MM-DD
-  start_time?:string   // HH:MM (optional)
-  end_time?:string     // HH:MM (optional)
+  date:string
+  start_time?:string
+  end_time?:string
   venue?:string
   location?:string
   notes?:string
@@ -43,11 +53,17 @@ export default function TripDetailPage() {
   const id = params?.id?.toString()
   const sb = useMemo(()=>createClient(),[])
   const me = useMe()
+
   const [status,setStatus]=useState<'loading'|'need-login'|'ready'|'not-found'|'error'>('loading')
   const [msg,setMsg]=useState('')
+
+  // declare trip state BEFORE deriving permissions
   const [trip,setTrip]=useState<Trip|null>(null)
-  const isOwner = me && trip && me.id === trip.created_by
-const canEdit = me && (me.role==='admin' || me.role==='finance' || (isOwner && trip?.status !== 'approved'))
+
+  // safe, role-aware permissions
+  const isOwner = !!(me && trip && me.id === trip.created_by)
+  const canEdit = !!(me && (me.role==='admin' || me.role==='finance' || (isOwner && trip?.status !== 'approved')))
+
   const [flights,setFlights]=useState<Flight[]>([])
   const [accs,setAccs]=useState<Accommodation[]>([])
   const [trans,setTrans]=useState<Transport[]>([])
@@ -59,7 +75,6 @@ const canEdit = me && (me.role==='admin' || me.role==='finance' || (isOwner && t
   const [openFlight,setOpenFlight]=useState<Record<string,boolean>>({})
   const [openAcc,setOpenAcc]=useState<Record<string,boolean>>({})
   const [openTrans,setOpenTrans]=useState<Record<string,boolean>>({})
-
   // show quick create forms
   const [showFlightForm,setShowFlightForm]=useState(false)
   const [showAccForm,setShowAccForm]=useState(false)
