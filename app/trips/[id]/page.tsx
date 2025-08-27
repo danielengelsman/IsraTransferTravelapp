@@ -34,33 +34,26 @@ export default function TripDetailPage() {
   const [invoices,setInvoices]=useState<Invoice[]>([])
   const [signedUrls,setSignedUrls]=useState<Record<string,string>>({})
 
-  // expandable rows
   const [openFlight,setOpenFlight]=useState<Record<string,boolean>>({})
   const [openAcc,setOpenAcc]=useState<Record<string,boolean>>({})
   const [openTrans,setOpenTrans]=useState<Record<string,boolean>>({})
 
-  // show forms
   const [showFlightForm,setShowFlightForm]=useState(false)
   const [showAccForm,setShowAccForm]=useState(false)
   const [showTransForm,setShowTransForm]=useState(false)
 
-  // new-flight form
+  // quick create forms
   const [fType,setFType]=useState<'international'|'internal'>('international')
   const [carrier,setCarrier]=useState(''); const [fno,setFno]=useState('')
   const [depA,setDepA]=useState(''); const [arrA,setArrA]=useState('')
-  const [depT,setDepT]=useState(''); const [arrT,setArrT]=useState('')
-  const [flightInvoice,setFlightInvoice]=useState<File|null>(null)
+  const [depT,setDepT]=useState(''); const [arrT,setArrT]=useState(''); const [flightInvoice,setFlightInvoice]=useState<File|null>(null)
 
-  // new-accommodation
   const [accName,setAccName]=useState(''); const [accAddr,setAccAddr]=useState('')
-  const [accIn,setAccIn]=useState(''); const [accOut,setAccOut]=useState(''); const [accRef,setAccRef]=useState('')
-  const [accInvoice,setAccInvoice]=useState<File|null>(null)
+  const [accIn,setAccIn]=useState(''); const [accOut,setAccOut]=useState(''); const [accRef,setAccRef]=useState(''); const [accInvoice,setAccInvoice]=useState<File|null>(null)
 
-  // new-transport
   const [tType,setTType]=useState<'car_hire'|'toll'|'train'|'taxi'|'other'>('car_hire')
   const [tCompany,setTCompany]=useState(''); const [tFrom,setTFrom]=useState(''); const [tTo,setTTo]=useState('')
-  const [tStart,setTStart]=useState(''); const [tEnd,setTEnd]=useState(''); const [tCost,setTCost]=useState('')
-  const [tInvoice,setTInvoice]=useState<File|null>(null)
+  const [tStart,setTStart]=useState(''); const [tEnd,setTEnd]=useState(''); const [tCost,setTCost]=useState(''); const [tInvoice,setTInvoice]=useState<File|null>(null)
 
   function invFor(kind:'flight'|'accommodation'|'transport', itemId:string){
     return invoices.filter(i=>i.section===kind && (i as any)[`${kind}_id`]===itemId)
@@ -114,7 +107,6 @@ export default function TripDetailPage() {
   if(status==='not-found') return <div className="card">Trip not found. <Link href="/trips" className="underline">Back</Link></div>
   if(status==='error') return <div className="card" style={{color:'#b91c1c'}}>{msg}</div>
 
-  /* --- header summary --- */
   const header = (
     <div className="trip-cover">
       <div style={{display:'flex',justifyContent:'space-between',gap:12,alignItems:'end'}}>
@@ -129,7 +121,6 @@ export default function TripDetailPage() {
     </div>
   )
 
-  /* helper renderers */
   const FlightRow = (f:Flight) => {
     const open = !!openFlight[f.id]
     const invoicesFor = invFor('flight', f.id)
@@ -163,7 +154,6 @@ export default function TripDetailPage() {
                 <a key={i.id} className="btn" href={signedUrls[i.id]||i.file_url||'#'} target="_blank">View invoice</a>
               ))}
             </div>
-            {/* simple inline editor */}
             <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(220px,1fr))',gap:8}}>
               <label className="block"><span className="label">Type</span>
                 <select className="input" defaultValue={f.flight_type||'international'} onChange={e=>f.flight_type=e.target.value as any}>
@@ -312,141 +302,151 @@ export default function TripDetailPage() {
     <div className="space-y-6">
       {header}
 
-      {/* Flights */}
-      <section className="section">
-        <div className="section-head">
-          <h2 className="section-title" style={{display:'flex',alignItems:'center',gap:8}}><IconPlane/> Flights</h2>
-          <button className="btn" onClick={()=>setShowFlightForm(s=>!s)}>{showFlightForm ? 'Cancel' : (<><IconPlus/> Add flight</>)}</button>
-        </div>
-        <div className="section-card">
-          {showFlightForm && (
-            <div className="details" onClick={e=>e.stopPropagation()}>
-              <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(220px,1fr))',gap:8}}>
-                <label className="block"><span className="label">Type</span>
-                  <select className="input" value={fType} onChange={e=>setFType(e.target.value as any)}>
-                    <option value="international">International</option><option value="internal">Internal</option>
-                  </select></label>
-                <label className="block"><span className="label">Carrier</span><input className="input" value={carrier} onChange={e=>setCarrier(e.target.value)} /></label>
-                <label className="block"><span className="label">Flight #</span><input className="input" value={fno} onChange={e=>setFno(e.target.value)} /></label>
-                <label className="block"><span className="label">Depart airport</span><input className="input" value={depA} onChange={e=>setDepA(e.target.value)} /></label>
-                <label className="block"><span className="label">Arrive airport</span><input className="input" value={arrA} onChange={e=>setArrA(e.target.value)} /></label>
-                <label className="block"><span className="label">Depart time</span><input className="input" type="datetime-local" value={depT} onChange={e=>setDepT(e.target.value)} /></label>
-                <label className="block"><span className="label">Arrive time</span><input className="input" type="datetime-local" value={arrT} onChange={e=>setArrT(e.target.value)} /></label>
-                <label className="block"><span className="label">Invoice (optional)</span>
-                  <input className="input" type="file" accept="image/*,.pdf" onChange={e=>setFlightInvoice(e.target.files?.[0]||null)} /></label>
-              </div>
-              <div style={{marginTop:8}}>
-                <button className="btn-primary" onClick={async()=>{
-                  const ins=await sb.from('flights').insert({
-                    trip_id:id, flight_type:fType, carrier, flight_number:fno,
-                    depart_airport:depA, arrive_airport:arrA,
-                    depart_time:depT?new Date(depT).toISOString():null,
-                    arrive_time:arrT?new Date(arrT).toISOString():null
-                  }).select().single()
-                  if(ins.error) return alert(ins.error.message)
-                  if(ins.data?.id && flightInvoice){
-                    try{ await uploadInvoice('flight', ins.data.id, flightInvoice) }catch(e:any){ alert('Flight saved, invoice upload failed: '+(e?.message||'unknown')) }
-                  }
-                  setCarrier(''); setFno(''); setDepA(''); setArrA(''); setDepT(''); setArrT(''); setFlightInvoice(null)
-                  setShowFlightForm(false); await reloadAll()
-                }}>Add flight</button>
-              </div>
+      {/* Two-column layout */}
+      <div className="trip-grid">
+        {/* LEFT: Flights (wide) */}
+        <div className="stack">
+          <section className="section">
+            <div className="section-head">
+              <h2 className="section-title" style={{display:'flex',alignItems:'center',gap:8}}><IconPlane/> Flights</h2>
+              <button className="btn" onClick={()=>setShowFlightForm(s=>!s)}>{showFlightForm ? 'Cancel' : (<><IconPlus/> Add flight</>)}</button>
             </div>
-          )}
+            <div className="section-card">
+              {showFlightForm && (
+                <div className="details" onClick={e=>e.stopPropagation()}>
+                  <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(220px,1fr))',gap:8}}>
+                    <label className="block"><span className="label">Type</span>
+                      <select className="input" value={fType} onChange={e=>setFType(e.target.value as any)}>
+                        <option value="international">International</option><option value="internal">Internal</option>
+                      </select></label>
+                    <label className="block"><span className="label">Carrier</span><input className="input" value={carrier} onChange={e=>setCarrier(e.target.value)} /></label>
+                    <label className="block"><span className="label">Flight #</span><input className="input" value={fno} onChange={e=>setFno(e.target.value)} /></label>
+                    <label className="block"><span className="label">Depart airport</span><input className="input" value={depA} onChange={e=>setDepA(e.target.value)} /></label>
+                    <label className="block"><span className="label">Arrive airport</span><input className="input" value={arrA} onChange={e=>setArrA(e.target.value)} /></label>
+                    <label className="block"><span className="label">Depart time</span><input className="input" type="datetime-local" value={depT} onChange={e=>setDepT(e.target.value)} /></label>
+                    <label className="block"><span className="label">Arrive time</span><input className="input" type="datetime-local" value={arrT} onChange={e=>setArrT(e.target.value)} /></label>
+                    <label className="block"><span className="label">Invoice (optional)</span>
+                      <input className="input" type="file" accept="image/*,.pdf" onChange={e=>setFlightInvoice(e.target.files?.[0]||null)} /></label>
+                  </div>
+                  <div style={{marginTop:8}}>
+                    <button className="btn-primary" onClick={async()=>{
+                      const ins=await sb.from('flights').insert({
+                        trip_id:id, flight_type:fType, carrier, flight_number:fno,
+                        depart_airport:depA, arrive_airport:arrA,
+                        depart_time:depT?new Date(depT).toISOString():null,
+                        arrive_time:arrT?new Date(arrT).toISOString():null
+                      }).select().single()
+                      if(ins.error) return alert(ins.error.message)
+                      if(ins.data?.id && flightInvoice){
+                        try{ await uploadInvoice('flight', ins.data.id, flightInvoice) }catch(e:any){ alert('Flight saved, invoice upload failed: '+(e?.message||'unknown')) }
+                      }
+                      setCarrier(''); setFno(''); setDepA(''); setArrA(''); setDepT(''); setArrT(''); setFlightInvoice(null)
+                      setShowFlightForm(false); await reloadAll()
+                    }}>Add flight</button>
+                  </div>
+                </div>
+              )}
 
-          {flights.length===0 ? (
-            <div className="row" onClick={()=>setShowFlightForm(true)}><div className="row-left"><IconPlane/><div><div className="row-title">No flights yet</div><div className="row-sub">Click to add your first flight</div></div></div><IconPlus/></div>
-          ) : (
-            flights.map(f => <div key={f.id}>{FlightRow(f)}</div>)
-          )}
-        </div>
-      </section>
-
-      {/* Accommodation */}
-      <section className="section">
-        <div className="section-head">
-          <h2 className="section-title" style={{display:'flex',alignItems:'center',gap:8}}><IconHotel/> Accommodation</h2>
-          <button className="btn" onClick={()=>setShowAccForm(s=>!s)}>{showAccForm?'Cancel':(<><IconPlus/> Add</>)}</button>
-        </div>
-        <div className="section-card">
-          {showAccForm && (
-            <div className="details" onClick={e=>e.stopPropagation()}>
-              <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(220px,1fr))',gap:8}}>
-                <label className="block"><span className="label">Name</span><input className="input" value={accName} onChange={e=>setAccName(e.target.value)} /></label>
-                <label className="block"><span className="label">Address</span><input className="input" value={accAddr} onChange={e=>setAccAddr(e.target.value)} /></label>
-                <label className="block"><span className="label">Check-in</span><input className="input" type="date" value={accIn} onChange={e=>setAccIn(e.target.value)} /></label>
-                <label className="block"><span className="label">Check-out</span><input className="input" type="date" value={accOut} onChange={e=>setAccOut(e.target.value)} /></label>
-                <label className="block"><span className="label">Booking ref</span><input className="input" value={accRef} onChange={e=>setAccRef(e.target.value)} /></label>
-                <label className="block"><span className="label">Invoice (optional)</span><input className="input" type="file" accept="image/*,.pdf" onChange={e=>setAccInvoice(e.target.files?.[0]||null)} /></label>
-              </div>
-              <div style={{marginTop:8}}>
-                <button className="btn-primary" onClick={async()=>{
-                  const ins=await sb.from('accommodations').insert({
-                    trip_id:id, name:accName, address:accAddr, check_in:accIn||null, check_out:accOut||null, booking_ref:accRef||null
-                  }).select().single()
-                  if(ins.error) return alert(ins.error.message)
-                  if(ins.data?.id && accInvoice){ try{ await uploadInvoice('accommodation', ins.data.id, accInvoice) }catch(e:any){ alert('Accommodation saved, invoice upload failed: '+(e?.message||'unknown')) } }
-                  setAccName(''); setAccAddr(''); setAccIn(''); setAccOut(''); setAccRef(''); setAccInvoice(null)
-                  setShowAccForm(false); await reloadAll()
-                }}>Add accommodation</button>
-              </div>
+              {flights.length===0 ? (
+                <div className="row" onClick={()=>setShowFlightForm(true)}>
+                  <div className="row-left"><IconPlane/><div><div className="row-title">No flights yet</div><div className="row-sub">Click to add your first flight</div></div></div><IconPlus/>
+                </div>
+              ) : (
+                flights.map(f => <div key={f.id}>{FlightRow(f)}</div>)
+              )}
             </div>
-          )}
-
-          {accs.length===0 ? (
-            <div className="row" onClick={()=>setShowAccForm(true)}><div className="row-left"><IconHotel/><div><div className="row-title">No accommodation yet</div><div className="row-sub">Click to add details</div></div></div><IconPlus/></div>
-          ) : (
-            accs.map(a => <div key={a.id}>{AccRow(a)}</div>)
-          )}
+          </section>
         </div>
-      </section>
 
-      {/* Transportation */}
-      <section className="section">
-        <div className="section-head">
-          <h2 className="section-title" style={{display:'flex',alignItems:'center',gap:8}}><IconCar/> Transportation</h2>
-          <button className="btn" onClick={()=>setShowTransForm(s=>!s)}>{showTransForm?'Cancel':(<><IconPlus/> Add</>)}</button>
-        </div>
-        <div className="section-card">
-          {showTransForm && (
-            <div className="details" onClick={e=>e.stopPropagation()}>
-              <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(220px,1fr))',gap:8}}>
-                <label className="block"><span className="label">Type</span>
-                  <select className="input" value={tType} onChange={e=>setTType(e.target.value as any)}>
-                    <option value="car_hire">Car hire</option><option value="toll">Toll</option>
-                    <option value="train">Train</option><option value="taxi">Taxi</option><option value="other">Other</option>
-                  </select></label>
-                <label className="block"><span className="label">Company</span><input className="input" value={tCompany} onChange={e=>setTCompany(e.target.value)} /></label>
-                <label className="block"><span className="label">Pickup</span><input className="input" value={tFrom} onChange={e=>setTFrom(e.target.value)} /></label>
-                <label className="block"><span className="label">Dropoff</span><input className="input" value={tTo} onChange={e=>setTTo(e.target.value)} /></label>
-                <label className="block"><span className="label">Start</span><input className="input" type="datetime-local" value={tStart} onChange={e=>setTStart(e.target.value)} /></label>
-                <label className="block"><span className="label">End</span><input className="input" type="datetime-local" value={tEnd} onChange={e=>setTEnd(e.target.value)} /></label>
-                <label className="block"><span className="label">Cost</span><input className="input" type="number" step="0.01" value={tCost} onChange={e=>setTCost(e.target.value)} /></label>
-                <label className="block"><span className="label">Invoice (optional)</span><input className="input" type="file" accept="image/*,.pdf" onChange={e=>setTInvoice(e.target.files?.[0]||null)} /></label>
-              </div>
-              <div style={{marginTop:8}}>
-                <button className="btn-primary" onClick={async()=>{
-                  const ins=await sb.from('transports').insert({
-                    trip_id:id, type:tType, company:tCompany||null, pickup_location:tFrom||null, dropoff_location:tTo||null,
-                    start_time:tStart?new Date(tStart).toISOString():null, end_time:tEnd?new Date(tEnd).toISOString():null,
-                    cost:tCost?Number(tCost):null
-                  }).select().single()
-                  if(ins.error) return alert(ins.error.message)
-                  if(ins.data?.id && tInvoice){ try{ await uploadInvoice('transport', ins.data.id, tInvoice) }catch(e:any){ alert('Transport saved, invoice upload failed: '+(e?.message||'unknown')) } }
-                  setTCompany(''); setTFrom(''); setTTo(''); setTStart(''); setTEnd(''); setTCost(''); setTInvoice(null)
-                  setShowTransForm(false); await reloadAll()
-                }}>Add transportation</button>
-              </div>
+        {/* RIGHT: Accommodation + Transportation (stacked) */}
+        <div className="stack">
+          {/* Accommodation */}
+          <section className="section">
+            <div className="section-head">
+              <h2 className="section-title" style={{display:'flex',alignItems:'center',gap:8}}><IconHotel/> Accommodation</h2>
+              <button className="btn" onClick={()=>setShowAccForm(s=>!s)}>{showAccForm?'Cancel':(<><IconPlus/> Add</>)}</button>
             </div>
-          )}
+            <div className="section-card">
+              {showAccForm && (
+                <div className="details" onClick={e=>e.stopPropagation()}>
+                  <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(220px,1fr))',gap:8}}>
+                    <label className="block"><span className="label">Name</span><input className="input" value={accName} onChange={e=>setAccName(e.target.value)} /></label>
+                    <label className="block"><span className="label">Address</span><input className="input" value={accAddr} onChange={e=>setAccAddr(e.target.value)} /></label>
+                    <label className="block"><span className="label">Check-in</span><input className="input" type="date" value={accIn} onChange={e=>setAccIn(e.target.value)} /></label>
+                    <label className="block"><span className="label">Check-out</span><input className="input" type="date" value={accOut} onChange={e=>setAccOut(e.target.value)} /></label>
+                    <label className="block"><span className="label">Booking ref</span><input className="input" value={accRef} onChange={e=>setAccRef(e.target.value)} /></label>
+                    <label className="block"><span className="label">Invoice (optional)</span><input className="input" type="file" accept="image/*,.pdf" onChange={e=>setAccInvoice(e.target.files?.[0]||null)} /></label>
+                  </div>
+                  <div style={{marginTop:8}}>
+                    <button className="btn-primary" onClick={async()=>{
+                      const ins=await sb.from('accommodations').insert({
+                        trip_id:id, name:accName, address:accAddr, check_in:accIn||null, check_out:accOut||null, booking_ref:accRef||null
+                      }).select().single()
+                      if(ins.error) return alert(ins.error.message)
+                      if(ins.data?.id && accInvoice){ try{ await uploadInvoice('accommodation', ins.data.id, accInvoice) }catch(e:any){ alert('Accommodation saved, invoice upload failed: '+(e?.message||'unknown')) } }
+                      setAccName(''); setAccAddr(''); setAccIn(''); setAccOut(''); setAccRef(''); setAccInvoice(null)
+                      setShowAccForm(false); await reloadAll()
+                    }}>Add accommodation</button>
+                  </div>
+                </div>
+              )}
 
-          {trans.length===0 ? (
-            <div className="row" onClick={()=>setShowTransForm(true)}><div className="row-left"><IconCar/><div><div className="row-title">No transportation yet</div><div className="row-sub">Click to add costs and car hire</div></div></div><IconPlus/></div>
-          ) : (
-            trans.map(t => <div key={t.id}>{TransRow(t)}</div>)
-          )}
+              {accs.length===0 ? (
+                <div className="row" onClick={()=>setShowAccForm(true)}><div className="row-left"><IconHotel/><div><div className="row-title">No accommodation yet</div><div className="row-sub">Click to add details</div></div></div><IconPlus/></div>
+              ) : (
+                accs.map(a => <div key={a.id}>{AccRow(a)}</div>)
+              )}
+            </div>
+          </section>
+
+          {/* Transportation */}
+          <section className="section">
+            <div className="section-head">
+              <h2 className="section-title" style={{display:'flex',alignItems:'center',gap:8}}><IconCar/> Transportation</h2>
+              <button className="btn" onClick={()=>setShowTransForm(s=>!s)}>{showTransForm?'Cancel':(<><IconPlus/> Add</>)}</button>
+            </div>
+            <div className="section-card">
+              {showTransForm && (
+                <div className="details" onClick={e=>e.stopPropagation()}>
+                  <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(220px,1fr))',gap:8}}>
+                    <label className="block"><span className="label">Type</span>
+                      <select className="input" value={tType} onChange={e=>setTType(e.target.value as any)}>
+                        <option value="car_hire">Car hire</option><option value="toll">Toll</option>
+                        <option value="train">Train</option><option value="taxi">Taxi</option><option value="other">Other</option>
+                      </select></label>
+                    <label className="block"><span className="label">Company</span><input className="input" value={tCompany} onChange={e=>setTCompany(e.target.value)} /></label>
+                    <label className="block"><span className="label">Pickup</span><input className="input" value={tFrom} onChange={e=>setTFrom(e.target.value)} /></label>
+                    <label className="block"><span className="label">Dropoff</span><input className="input" value={tTo} onChange={e=>setTTo(e.target.value)} /></label>
+                    <label className="block"><span className="label">Start</span><input className="input" type="datetime-local" value={tStart} onChange={e=>setTStart(e.target.value)} /></label>
+                    <label className="block"><span className="label">End</span><input className="input" type="datetime-local" value={tEnd} onChange={e=>setTEnd(e.target.value)} /></label>
+                    <label className="block"><span className="label">Cost</span><input className="input" type="number" step="0.01" value={tCost} onChange={e=>setTCost(e.target.value)} /></label>
+                    <label className="block"><span className="label">Invoice (optional)</span><input className="input" type="file" accept="image/*,.pdf" onChange={e=>setTInvoice(e.target.files?.[0]||null)} /></label>
+                  </div>
+                  <div style={{marginTop:8}}>
+                    <button className="btn-primary" onClick={async()=>{
+                      const ins=await sb.from('transports').insert({
+                        trip_id:id, type:tType, company:tCompany||null, pickup_location:tFrom||null, dropoff_location:tTo||null,
+                        start_time:tStart?new Date(tStart).toISOString():null, end_time:tEnd?new Date(tEnd).toISOString():null,
+                        cost:tCost?Number(tCost):null
+                      }).select().single()
+                      if(ins.error) return alert(ins.error.message)
+                      if(ins.data?.id && tInvoice){ try{ await uploadInvoice('transport', ins.data.id, tInvoice) }catch(e:any){ alert('Transport saved, invoice upload failed: '+(e?.message||'unknown')) } }
+                      setTCompany(''); setTFrom(''); setTTo(''); setTStart(''); setTEnd(''); setTCost(''); setTInvoice(null)
+                      setShowTransForm(false); await reloadAll()
+                    }}>Add transportation</button>
+                  </div>
+                </div>
+              )}
+
+              {trans.length===0 ? (
+                <div className="row" onClick={()=>setShowTransForm(true)}><div className="row-left"><IconCar/><div><div className="row-title">No transportation yet</div><div className="row-sub">Click to add costs and car hire</div></div></div><IconPlus/></div>
+              ) : (
+                trans.map(t => <div key={t.id}>{TransRow(t)}</div>)
+              )}
+            </div>
+          </section>
         </div>
-      </section>
+      </div>
     </div>
   )
 }
