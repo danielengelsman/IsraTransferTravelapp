@@ -2,6 +2,7 @@ import type { Metadata } from "next"
 import "./globals.css"
 import Link from "next/link"
 import Image from "next/image"
+import ThemeToggle from "@/components/ThemeToggle"
 
 export const metadata: Metadata = {
   title: "IsraTransfer Travel Manager",
@@ -12,7 +13,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <body>
-        {/* Top brand bar */}
+        {/* Brand hairline */}
         <div className="gradient-bar" />
 
         {/* Header */}
@@ -33,14 +34,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <Link className="btn-ghost" href="/trips">Trips</Link>
               <Link className="btn" href="/trips/new">New trip</Link>
               <Link className="btn" href="/login">Login</Link>
+              <ThemeToggle />
             </nav>
           </div>
         </header>
 
-        {/* Main content container */}
-        <main className="container-page py-6">
-          {children}
-        </main>
+        <main className="container-page py-6">{children}</main>
       </body>
     </html>
   )
