@@ -128,7 +128,7 @@ export default function TripDetailPage() {
     setStatus('ready')
   }
 
-  // Helper: upload an invoice file to Storage and record in DB
+   // Helper: upload an invoice file to Storage and record in DB
   async function uploadInvoice(section: 'flight'|'accommodation'|'transport', itemId: string, file: File) {
     const safe = file.name.replace(/[^\w.\-]+/g, '_')
     const path = `${id}/${section}/${itemId}/${Date.now()}_${safe}`
@@ -136,12 +136,19 @@ export default function TripDetailPage() {
     if (upErr) throw upErr
     const { data } = sb.storage.from('invoices').getPublicUrl(path)
     const url = data.publicUrl
-    const payload: any = { trip_id: id, section, file_path: path, file_url: url }
+    const payload: any = {
+      trip_id: id,
+      section,
+      name: file.name,   // ✅ include required name
+      file_path: path,
+      file_url: url
+    }
     if (section === 'flight') payload.flight_id = itemId
     if (section === 'accommodation') payload.accommodation_id = itemId
     if (section === 'transport') payload.transport_id = itemId
     const { error: insErr } = await sb.from('invoices').insert(payload)
     if (insErr) throw insErr
+
   }
 
   useEffect(() => {
