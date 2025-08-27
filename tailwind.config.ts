@@ -1,6 +1,7 @@
 import type { Config } from 'tailwindcss'
 
 const config: Config = {
+  darkMode: 'class',
   content: [
     "./app/**/*.{js,ts,jsx,tsx,mdx}",
     "./components/**/*.{js,ts,jsx,tsx,mdx}",
@@ -8,18 +9,17 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        // Brand shades sampled to match your logo (adjust anytime)
         brand: {
           50:  "#eff7ff",
           100: "#d9edff",
           200: "#b7dcff",
           300: "#89c4ff",
           400: "#54a8ff",
-          500: "#1f8cff",   // light side of the gradient
+          500: "#1f8cff",
           600: "#1773d9",
           700: "#125ab0",
           800: "#0e468a",
-          900: "#0b3a73",   // dark side of the gradient
+          900: "#0b3a73",
         }
       },
       boxShadow: {
