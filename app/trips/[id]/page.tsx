@@ -6,6 +6,7 @@ import { useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
 import InvoiceUpload from '@/components/InvoiceUpload'
+import { IconPlane, IconHotel, IconCar, IconPlus } from '@/components/Icons'
 
 type Trip = {
   id: string
@@ -52,8 +53,11 @@ type Transport = {
 type Invoice = {
   id: string
   trip_id: string
-  section: string | null
+  section: 'flight' | 'accommodation' | 'transport' | 'other' | null
   file_url: string | null
+  file_path: string | null
+  amount?: number | null
+  currency?: string | null
   flight_id?: string | null
   accommodation_id?: string | null
   transport_id?: string | null
@@ -72,6 +76,7 @@ export default function TripDetailPage() {
   const [accs, setAccs] = useState<Accommodation[]>([])
   const [trans, setTrans] = useState<Transport[]>([])
   const [invoices, setInvoices] = useState<Invoice[]>([])
+  const [signedUrls, setSignedUrls] = useState<Record<string, string>>({})
 
   // Add forms show/hide
   const [showFlightForm, setShowFlightForm] = useState(false)
@@ -95,12 +100,12 @@ export default function TripDetailPage() {
   const [tStart, setTStart] = useState(''); const [tEnd, setTEnd] = useState(''); const [tCost, setTCost] = useState('')
   const [tInvoice, setTInvoice] = useState<File | null>(null)
 
-  // EDIT panels (which item is open)
+  // EDIT panels (open id)
   const [editFlightId, setEditFlightId] = useState<string | null>(null)
   const [editAccId, setEditAccId] = useState<string | null>(null)
   const [editTransId, setEditTransId] = useState<string | null>(null)
 
-  // EDIT state for current item
+  // EDIT state
   const [eFType, setEFType] = useState<'international' | 'internal'>('international')
   const [eCarrier, setECarrier] = useState(''); const [eFno, setEFno] = useState('')
   const [eDepA, setEDepA] = useState(''); const [eArrA, setEArrA] = useState('')
@@ -112,6 +117,29 @@ export default function TripDetailPage() {
   const [eTType, setETType] = useState<'car_hire'|'toll'|'train'|'taxi'|'other'>('car_hire')
   const [eTCompany, setETCompany] = useState(''); const [eTFrom, setETFrom] = useState(''); const [eTTo, setETTo] = useState('')
   const [eTStart, setETStart] = useState(''); const [eTEnd, setETEnd] = useState(''); const [eTCost, setETCost] = useState('')
+
+  const toInputDT = (s: string | null) => s ? new Date(s).toISOString().slice(0,16) : ''
+
+  function invFor(kind: 'flight'|'accommodation'|'transport', itemId: string) {
+    return invoices.filter((i) => i.section === kind && (i as any)[`${kind}_id`] === itemId)
+  }
+
+  // Upload + record invoice
+  async function uploadInvoice(section: 'flight'|'accommodation'|'transport', itemId: string, file: File) {
+    const safe = file.name.replace(/[^\w.\-]+/g, '_')
+    const path = `${id}/${section}/${itemId}/${Date.now()}_${safe}`
+    const { error: upErr } = await sb.storage.from('invoices').upload(path, file, { upsert: false })
+    if (upErr) throw upErr
+    // try signed link (works for public or private buckets)
+    const { data: signed } = await sb.storage.from('invoices').createSignedUrl(path, 3600)
+    const url = signed?.signedUrl ?? null
+    const payload: any = { trip_id: id, section, name: file.name, file_path: path, file_url: url }
+    if (section === 'flight') payload.flight_id = itemId
+    if (section === 'accommodation') payload.accommodation_id = itemId
+    if (section === 'transport') payload.transport_id = itemId
+    const { error: insErr } = await sb.from('invoices').insert(payload)
+    if (insErr) throw insErr
+  }
 
   async function reloadAll() {
     if (!id) return
@@ -131,32 +159,33 @@ export default function TripDetailPage() {
       setMsg(fl.error?.message || ac.error?.message || tr.error?.message || inv.error?.message || 'Failed to load')
       setStatus('error'); return
     }
+    const invRows = (inv.data as any) || []
     setFlights(fl.data as any || [])
     setAccs(ac.data as any || [])
     setTrans(tr.data as any || [])
-    setInvoices(inv.data as any || [])
+    setInvoices(invRows)
+
+    // signed links map (works if bucket is private)
+    const map: Record<string, string> = {}
+    for (const row of invRows) {
+      if (row.file_path) {
+        const { data: s } = await sb.storage.from('invoices').createSignedUrl(row.file_path, 3600)
+        if (s?.signedUrl) map[row.id] = s.signedUrl
+      }
+    }
+    setSignedUrls(map)
+
     setStatus('ready')
   }
 
-  // Helpers
-  const toInputDT = (s: string | null) => s ? new Date(s).toISOString().slice(0,16) : ''
-  function invFor(kind: 'flight'|'accommodation'|'transport', id: string) {
-    return invoices.filter((i) => i.section === kind && (i as any)[`${kind}_id`] === id)
-  }
-  async function uploadInvoice(section: 'flight'|'accommodation'|'transport', itemId: string, file: File) {
-    const safe = file.name.replace(/[^\w.\-]+/g, '_')
-    const path = `${id}/${section}/${itemId}/${Date.now()}_${safe}`
-    const { error: upErr } = await sb.storage.from('invoices').upload(path, file, { upsert: false })
-    if (upErr) throw upErr
-    const { data } = sb.storage.from('invoices').getPublicUrl(path)
-    const url = data.publicUrl
-    const payload: any = { trip_id: id, section, name: file.name, file_path: path, file_url: url }
-    if (section === 'flight') payload.flight_id = itemId
-    if (section === 'accommodation') payload.accommodation_id = itemId
-    if (section === 'transport') payload.transport_id = itemId
-    const { error: insErr } = await sb.from('invoices').insert(payload)
-    if (insErr) throw insErr
-  }
+  // Totals by currency (uses invoices table)
+  const totalsByCurrency = invoices.reduce<Record<string, number>>((acc, i) => {
+    if (i.amount && i.currency) {
+      const cur = i.currency.toUpperCase()
+      acc[cur] = (acc[cur] || 0) + Number(i.amount)
+    }
+    return acc
+  }, {})
 
   useEffect(() => {
     if (!id) return
@@ -184,33 +213,38 @@ export default function TripDetailPage() {
   )
   if (status === 'error') return <div className="card text-red-600">{msg}</div>
 
+  // Small empty-state block with icon & add button
+  function EmptyState({ icon, title, onAdd }: { icon: React.ReactNode, title: string, onAdd: () => void }) {
+    return (
+      <div className="card flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          {icon}
+          <div className="text-sm text-slate-600 dark:text-slate-300">{title}</div>
+        </div>
+        <button className="btn" onClick={onAdd}><IconPlus className="w-4 h-4" /> Add</button>
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">{trip?.title || 'Untitled trip'}</h1>
-        <Link className="btn" href="/trips">Back to Trips</Link>
-      </div>
-
-      {/* Summary */}
-      <div className="grid md:grid-cols-3 gap-4">
-        <div className="card">
-          <div className="text-sm text-gray-600">Location</div>
-          <div className="text-lg">{trip?.location || '—'}</div>
-        </div>
-        <div className="card">
-          <div className="text-sm text-gray-600">Dates</div>
-          <div className="text-lg">{trip?.start_date || '—'} → {trip?.end_date || '—'}</div>
-        </div>
-        <div className="card">
-          <div className="text-sm text-gray-600">Trip ID</div>
-          <div className="font-mono text-sm">{trip?.id}</div>
+      {/* Cover bar */}
+      <div className="trip-cover rounded-2xl text-white p-6">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-semibold">{trip?.title || 'Untitled trip'}</h1>
+            <div className="opacity-90">
+              {trip?.location || '—'} • {trip?.start_date || '—'} → {trip?.end_date || '—'}
+            </div>
+          </div>
+          <Link className="btn bg-white/90 text-slate-900 hover:shadow-hover" href="/trips">Back to Trips</Link>
         </div>
       </div>
 
       {/* Description */}
       <div className="card space-y-2">
-        <div className="text-sm text-gray-600">Description</div>
-        <textarea className="input" rows={3} value={desc} onChange={e=>setDesc(e.target.value)} placeholder="What is this trip about?" />
+        <div className="text-sm text-slate-600 dark:text-slate-300">Description</div>
+        <textarea className="textarea" rows={3} value={desc} onChange={e=>setDesc(e.target.value)} placeholder="What is this trip about?" />
         <button
           className="btn-primary"
           onClick={async () => {
@@ -221,18 +255,35 @@ export default function TripDetailPage() {
         >Save description</button>
       </div>
 
+      {/* Totals */}
+      {Object.keys(totalsByCurrency).length > 0 && (
+        <div className="card">
+          <div className="section-title mb-2">Invoice totals</div>
+          <div className="flex flex-wrap gap-3">
+            {Object.entries(totalsByCurrency).map(([cur, amt]) => (
+              <div key={cur} className="px-3 py-2 rounded-xl bg-brand-50 text-brand-900 dark:bg-slate-800 dark:text-brand-200">
+                <span className="font-semibold">{cur}</span> {amt.toFixed(2)}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Flights */}
-      <div className="space-y-2">
+      <div className="space-y-3">
         <div className="flex items-center justify-between">
-          <div className="text-xl font-semibold">Flights</div>
+          <div className="section-title flex items-center gap-2">
+            <IconPlane className="w-5 h-5" /> Flights
+          </div>
           <button className="btn" onClick={() => setShowFlightForm(s => !s)}>
             {showFlightForm ? 'Cancel' : 'Add flight'}
           </button>
         </div>
+
         {showFlightForm && (
           <div className="card grid md:grid-cols-2 gap-3">
             <label className="block"><span className="label">Type</span>
-              <select className="input" value={fType} onChange={e=>setFType(e.target.value as any)}>
+              <select className="select" value={fType} onChange={e=>setFType(e.target.value as any)}>
                 <option value="international">International</option>
                 <option value="internal">Internal</option>
               </select></label>
@@ -271,8 +322,10 @@ export default function TripDetailPage() {
         )}
 
         <div className="grid md:grid-cols-2 gap-3">
-          {flights.map(f => (
-            <div key={f.id} className="card space-y-2">
+          {flights.length === 0 ? (
+            <EmptyState icon={<IconPlane className="w-5 h-5 text-slate-500" />} title="No flights yet." onAdd={()=>setShowFlightForm(true)} />
+          ) : flights.map(f => (
+            <div key={f.id} className="card space-y-1">
               <div className="flex justify-between items-center">
                 <div className="font-medium">{(f.flight_type || '—').toUpperCase()} • {f.carrier || ''} {f.flight_number || ''}</div>
                 <div className="flex gap-2">
@@ -286,14 +339,13 @@ export default function TripDetailPage() {
                   }}>Edit</button>
                 </div>
               </div>
-              <div className="text-sm text-gray-600">{f.depart_airport || '—'} → {f.arrive_airport || '—'}</div>
+              <div className="text-sm text-slate-600 dark:text-slate-300">{f.depart_airport || '—'} → {f.arrive_airport || '—'}</div>
               <div className="text-sm">{f.depart_time || '—'} → {f.arrive_time || '—'}</div>
 
-              {/* EDIT PANEL */}
               {editFlightId === f.id && (
-                <div className="mt-2 border-t pt-2 grid md:grid-cols-2 gap-3">
+                <div className="mt-2 border-t border-slate-200 dark:border-slate-800 pt-2 grid md:grid-cols-2 gap-3">
                   <label className="block"><span className="label">Type</span>
-                    <select className="input" value={eFType} onChange={e=>setEFType(e.target.value as any)}>
+                    <select className="select" value={eFType} onChange={e=>setEFType(e.target.value as any)}>
                       <option value="international">International</option>
                       <option value="internal">Internal</option>
                     </select></label>
@@ -325,11 +377,11 @@ export default function TripDetailPage() {
                   </div>
 
                   <div className="md:col-span-2">
-                    <div className="text-sm text-gray-600 mb-1">Invoices</div>
+                    <div className="text-sm text-slate-600 dark:text-slate-300 mb-1">Invoices</div>
                     <div className="flex items-center gap-2 flex-wrap">
                       <InvoiceUpload tripId={id!} section="flight" itemId={f.id} />
                       {invFor('flight', f.id).map(i => (
-                        <a key={i.id} href={i.file_url || '#'} target="_blank" className="underline text-sm">view</a>
+                        <a key={i.id} href={signedUrls[i.id] || i.file_url || '#'} target="_blank" rel="noreferrer" className="underline text-sm">view</a>
                       ))}
                       {!invFor('flight', f.id).length && <span className="text-sm">No invoices yet.</span>}
                     </div>
@@ -338,18 +390,20 @@ export default function TripDetailPage() {
               )}
             </div>
           ))}
-          {!flights.length && <div className="card">No flights yet.</div>}
         </div>
       </div>
 
       {/* Accommodation */}
-      <div className="space-y-2">
+      <div className="space-y-3">
         <div className="flex items-center justify-between">
-          <div className="text-xl font-semibold">Accommodation</div>
+          <div className="section-title flex items-center gap-2">
+            <IconHotel className="w-5 h-5" /> Accommodation
+          </div>
           <button className="btn" onClick={() => setShowAccForm(s => !s)}>
             {showAccForm ? 'Cancel' : 'Add accommodation'}
           </button>
         </div>
+
         {showAccForm && (
           <div className="card grid md:grid-cols-2 gap-3">
             <label className="block"><span className="label">Name</span>
@@ -383,8 +437,10 @@ export default function TripDetailPage() {
         )}
 
         <div className="grid md:grid-cols-2 gap-3">
-          {accs.map(a => (
-            <div key={a.id} className="card space-y-2">
+          {accs.length === 0 ? (
+            <EmptyState icon={<IconHotel className="w-5 h-5 text-slate-500" />} title="No accommodation yet." onAdd={()=>setShowAccForm(true)} />
+          ) : accs.map(a => (
+            <div key={a.id} className="card space-y-1">
               <div className="flex justify-between items-center">
                 <div className="font-medium">{a.name || '—'}</div>
                 <div className="flex gap-2">
@@ -396,11 +452,11 @@ export default function TripDetailPage() {
                   }}>Edit</button>
                 </div>
               </div>
-              <div className="text-sm text-gray-600">{a.address || '—'}</div>
+              <div className="text-sm text-slate-600 dark:text-slate-300">{a.address || '—'}</div>
               <div className="text-sm">{a.check_in || '—'} → {a.check_out || '—'}</div>
 
               {editAccId === a.id && (
-                <div className="mt-2 border-t pt-2 grid md:grid-cols-2 gap-3">
+                <div className="mt-2 border-t border-slate-200 dark:border-slate-800 pt-2 grid md:grid-cols-2 gap-3">
                   <label className="block"><span className="label">Name</span>
                     <input className="input" value={eAccName} onChange={e=>setEAccName(e.target.value)} /></label>
                   <label className="block"><span className="label">Address</span>
@@ -425,11 +481,11 @@ export default function TripDetailPage() {
                   </div>
 
                   <div className="md:col-span-2">
-                    <div className="text-sm text-gray-600 mb-1">Invoices</div>
+                    <div className="text-sm text-slate-600 dark:text-slate-300 mb-1">Invoices</div>
                     <div className="flex items-center gap-2 flex-wrap">
                       <InvoiceUpload tripId={id!} section="accommodation" itemId={a.id} />
                       {invFor('accommodation', a.id).map(i => (
-                        <a key={i.id} href={i.file_url || '#'} target="_blank" className="underline text-sm">view</a>
+                        <a key={i.id} href={signedUrls[i.id] || i.file_url || '#'} target="_blank" rel="noreferrer" className="underline text-sm">view</a>
                       ))}
                       {!invFor('accommodation', a.id).length && <span className="text-sm">No invoices yet.</span>}
                     </div>
@@ -438,22 +494,24 @@ export default function TripDetailPage() {
               )}
             </div>
           ))}
-          {!accs.length && <div className="card">No accommodation yet.</div>}
         </div>
       </div>
 
       {/* Transportation */}
-      <div className="space-y-2">
+      <div className="space-y-3">
         <div className="flex items-center justify-between">
-          <div className="text-xl font-semibold">Transportation</div>
+          <div className="section-title flex items-center gap-2">
+            <IconCar className="w-5 h-5" /> Transportation
+          </div>
           <button className="btn" onClick={() => setShowTransForm(s => !s)}>
             {showTransForm ? 'Cancel' : 'Add transportation'}
           </button>
         </div>
+
         {showTransForm && (
           <div className="card grid md:grid-cols-2 gap-3">
             <label className="block"><span className="label">Type</span>
-              <select className="input" value={tType} onChange={e=>setTType(e.target.value as any)}>
+              <select className="select" value={tType} onChange={e=>setTType(e.target.value as any)}>
                 <option value="car_hire">Car hire</option>
                 <option value="toll">Toll</option>
                 <option value="train">Train</option>
@@ -496,8 +554,10 @@ export default function TripDetailPage() {
         )}
 
         <div className="grid md:grid-cols-2 gap-3">
-          {trans.map(t => (
-            <div key={t.id} className="card space-y-2">
+          {trans.length === 0 ? (
+            <EmptyState icon={<IconCar className="w-5 h-5 text-slate-500" />} title="No transportation yet." onAdd={()=>setShowTransForm(true)} />
+          ) : trans.map(t => (
+            <div key={t.id} className="card space-y-1">
               <div className="flex justify-between items-center">
                 <div className="font-medium">{t.type || '—'} {t.company ? `• ${t.company}` : ''}</div>
                 <div className="flex gap-2">
@@ -510,13 +570,13 @@ export default function TripDetailPage() {
                   }}>Edit</button>
                 </div>
               </div>
-              <div className="text-sm text-gray-600">{t.pickup_location || '—'} → {t.dropoff_location || '—'}</div>
+              <div className="text-sm text-slate-600 dark:text-slate-300">{t.pickup_location || '—'} → {t.dropoff_location || '—'}</div>
               <div className="text-sm">{t.start_time || '—'} → {t.end_time || '—'}</div>
 
               {editTransId === t.id && (
-                <div className="mt-2 border-t pt-2 grid md:grid-cols-2 gap-3">
+                <div className="mt-2 border-t border-slate-200 dark:border-slate-800 pt-2 grid md:grid-cols-2 gap-3">
                   <label className="block"><span className="label">Type</span>
-                    <select className="input" value={eTType} onChange={e=>setETType(e.target.value as any)}>
+                    <select className="select" value={eTType} onChange={e=>setETType(e.target.value as any)}>
                       <option value="car_hire">Car hire</option>
                       <option value="toll">Toll</option>
                       <option value="train">Train</option>
@@ -552,11 +612,11 @@ export default function TripDetailPage() {
                   </div>
 
                   <div className="md:col-span-2">
-                    <div className="text-sm text-gray-600 mb-1">Invoices</div>
+                    <div className="text-sm text-slate-600 dark:text-slate-300 mb-1">Invoices</div>
                     <div className="flex items-center gap-2 flex-wrap">
                       <InvoiceUpload tripId={id!} section="transport" itemId={t.id} />
                       {invFor('transport', t.id).map(i => (
-                        <a key={i.id} href={i.file_url || '#'} target="_blank" className="underline text-sm">view</a>
+                        <a key={i.id} href={signedUrls[i.id] || i.file_url || '#'} target="_blank" rel="noreferrer" className="underline text-sm">view</a>
                       ))}
                       {!invFor('transport', t.id).length && <span className="text-sm">No invoices yet.</span>}
                     </div>
@@ -565,7 +625,6 @@ export default function TripDetailPage() {
               )}
             </div>
           ))}
-          {!trans.length && <div className="card">No transportation yet.</div>}
         </div>
       </div>
     </div>
