@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 
@@ -15,6 +15,26 @@ export default function LoginForm() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // 👉 If already logged in, go straight to nextUrl
+  useEffect(() => {
+    let unsub: (() => void) | undefined
+
+    ;(async () => {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (session) {
+        window.location.replace(nextUrl)
+        return
+      }
+      // also listen for the session to appear right after sign-in
+      const { data: sub } = supabase.auth.onAuthStateChange((_event, sess) => {
+        if (sess) window.location.replace(nextUrl)
+      })
+      unsub = sub.subscription.unsubscribe
+    })()
+
+    return () => { try { unsub?.() } catch {} }
+  }, [nextUrl])
+
   async function submit(e: React.FormEvent) {
     e.preventDefault()
     setError(null)
@@ -27,8 +47,8 @@ export default function LoginForm() {
         const { error } = await supabase.auth.signUp({ email, password })
         if (error) throw error
       }
-      // redirect after success (browser-only)
-      window.location.href = nextUrl
+      // Safety redirect (onAuthStateChange should also catch it)
+      window.location.replace(nextUrl)
     } catch (err: any) {
       setError(err?.message || 'Something went wrong')
     } finally {
