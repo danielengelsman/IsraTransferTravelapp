@@ -1,56 +1,32 @@
+/* --- OPTIONAL: keep these if Tailwind works locally ---
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+-------------------------------------------------------- */
 
-@layer base {
-  html, body { @apply min-h-screen bg-slate-50 text-slate-900; }
-  .dark html, .dark body { @apply bg-slate-950 text-slate-100; }
-  a { @apply underline-offset-2; }
+/* Fallback plain CSS so the app looks good even if Tailwind isn't running */
+
+* { box-sizing: border-box; }
+img { display: block; max-width: 100%; }
+
+:root{
+  /* Brand palette */
+  --brand-50:#eff7ff; --brand-100:#d9edff; --brand-200:#b7dcff; --brand-300:#89c4ff;
+  --brand-400:#54a8ff; --brand-500:#1f8cff; --brand-600:#1773d9; --brand-700:#125ab0;
+  --brand-800:#0e468a; --brand-900:#0b3a73;
+
+  /* Light theme */
+  --bg:#f8fafc;          /* slate-50 */
+  --fg:#0f172a;          /* slate-900 */
+  --muted:#475569;       /* slate-600 */
+  --card-bg:#ffffff;
+  --border:#e2e8f0;      /* slate-200 */
+  --border-dark:#0f172a; /* slate-900 */
+  --shadow-soft:0 2px 8px rgba(15,23,42,.06);
+  --shadow-hover:0 6px 16px rgba(15,23,42,.10);
 }
-
-@layer components {
-  .container-page { @apply max-w-5xl mx-auto px-4; }
-
-  .navbar { @apply sticky top-0 z-30 border-b bg-white/80 backdrop-blur dark:bg-slate-900/80 dark:border-slate-800; }
-  .navbar-inner { @apply container-page py-3 flex items-center justify-between gap-4; }
-  .brand { @apply flex items-center gap-2 no-underline; }
-  .brand-pill { @apply rounded-full px-2 py-0.5 text-[10px] font-medium bg-brand-100 text-brand-800 dark:bg-brand-900/40 dark:text-brand-100; }
-
-  .card {
-    @apply bg-white border border-slate-200 rounded-2xl p-4 shadow-soft hover:shadow-hover transition-shadow;
-    @apply dark:bg-slate-900 dark:border-slate-800;
-  }
-
-  .btn {
-    @apply inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm
-           shadow-soft hover:shadow-hover transition active:scale-[.98]
-           dark:bg-slate-900 dark:border-slate-700;
-  }
-  .btn-primary {
-    @apply inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium text-white
-           shadow-soft hover:shadow-hover transition active:scale-[.98];
-    background-image: linear-gradient(90deg, theme(colors.brand.900), theme(colors.brand.500));
-  }
-  .btn-ghost { @apply inline-flex items-center gap-2 rounded-xl px-3 py-2 text-sm text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800; }
-
-  .label { @apply block mb-1 text-sm font-medium text-slate-600 dark:text-slate-300; }
-  .input {
-    @apply w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none
-           focus:ring-4 focus:ring-brand-100 focus:border-brand-500
-           dark:bg-slate-900 dark:border-slate-700 dark:focus:ring-slate-800 dark:focus:border-brand-400;
-  }
-  .select { @apply input; }
-  .textarea { @apply input min-h-[120px]; }
-
-  .section-title { @apply text-xl font-semibold; }
-
-  .gradient-bar {
-    background-image: linear-gradient(90deg, theme(colors.brand.900), theme(colors.brand.500));
-    height: 3px;
-  }
-
-  /* Trip cover header */
-  .trip-cover {
-    background-image: linear-gradient(135deg, theme(colors.brand.900), theme(colors.brand.500));
-  }
-}
+.dark{
+  /* Dark theme overrides */
+  --bg:#020617;          /* slate-950 */
+  --fg:#e2e8f0;          /* slate-200 */
+  --muted:#cbd5e1;       /* slate-300 */
