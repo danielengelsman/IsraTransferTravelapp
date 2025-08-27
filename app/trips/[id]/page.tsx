@@ -85,20 +85,23 @@ export default function TripDetailPage() {
   // Description form
   const [desc, setDesc] = useState('')
 
-  // Flight form
+  // Flight form + invoice
   const [fType, setFType] = useState<'international' | 'internal'>('international')
   const [carrier, setCarrier] = useState(''); const [fno, setFno] = useState('')
   const [depA, setDepA] = useState(''); const [arrA, setArrA] = useState('')
   const [depT, setDepT] = useState(''); const [arrT, setArrT] = useState('')
+  const [flightInvoice, setFlightInvoice] = useState<File | null>(null)
 
-  // Accommodation form
+  // Accommodation form + invoice
   const [accName, setAccName] = useState(''); const [accAddr, setAccAddr] = useState('')
   const [accIn, setAccIn] = useState(''); const [accOut, setAccOut] = useState(''); const [accRef, setAccRef] = useState('')
+  const [accInvoice, setAccInvoice] = useState<File | null>(null)
 
-  // Transport form
+  // Transport form + invoice
   const [tType, setTType] = useState<'car_hire'|'toll'|'train'|'taxi'|'other'>('car_hire')
   const [tCompany, setTCompany] = useState(''); const [tFrom, setTFrom] = useState(''); const [tTo, setTTo] = useState('')
   const [tStart, setTStart] = useState(''); const [tEnd, setTEnd] = useState(''); const [tCost, setTCost] = useState('')
+  const [tInvoice, setTInvoice] = useState<File | null>(null)
 
   async function reloadAll() {
     if (!id) return
@@ -123,6 +126,22 @@ export default function TripDetailPage() {
     setTrans(tr.data as any || [])
     setInvoices(inv.data as any || [])
     setStatus('ready')
+  }
+
+  // Helper: upload an invoice file to Storage and record in DB
+  async function uploadInvoice(section: 'flight'|'accommodation'|'transport', itemId: string, file: File) {
+    const safe = file.name.replace(/[^\w.\-]+/g, '_')
+    const path = `${id}/${section}/${itemId}/${Date.now()}_${safe}`
+    const { error: upErr } = await sb.storage.from('invoices').upload(path, file, { upsert: false })
+    if (upErr) throw upErr
+    const { data } = sb.storage.from('invoices').getPublicUrl(path)
+    const url = data.publicUrl
+    const payload: any = { trip_id: id, section, file_path: path, file_url: url }
+    if (section === 'flight') payload.flight_id = itemId
+    if (section === 'accommodation') payload.accommodation_id = itemId
+    if (section === 'transport') payload.transport_id = itemId
+    const { error: insErr } = await sb.from('invoices').insert(payload)
+    if (insErr) throw insErr
   }
 
   useEffect(() => {
@@ -235,19 +254,37 @@ export default function TripDetailPage() {
               <span className="label">Arrive time</span>
               <input className="input" type="datetime-local" value={arrT} onChange={e=>setArrT(e.target.value)} />
             </label>
+
+            {/* Optional invoice file at creation */}
+            <label className="block md:col-span-2">
+              <span className="label">Invoice (PDF or image, optional)</span>
+              <input className="input" type="file" accept="image/*,.pdf" onChange={e=>setFlightInvoice(e.target.files?.[0] || null)} />
+            </label>
+
             <div className="flex items-end">
-              <button className="btn-primary" onClick={async ()=>{
-                const { error } = await sb.from('flights').insert({
-                  trip_id: id, flight_type: fType, carrier, flight_number: fno,
-                  depart_airport: depA, arrive_airport: arrA,
-                  depart_time: depT ? new Date(depT).toISOString() : null,
-                  arrive_time: arrT ? new Date(arrT).toISOString() : null
-                })
-                if (error) { alert(error.message); return }
-                setCarrier(''); setFno(''); setDepA(''); setArrA(''); setDepT(''); setArrT('')
-                setShowFlightForm(false)
-                await reloadAll()
-              }}>Add flight</button>
+              <button
+                className="btn-primary"
+                onClick={async () => {
+                  const { data, error } = await sb.from('flights').insert({
+                    trip_id: id, flight_type: fType, carrier, flight_number: fno,
+                    depart_airport: depA, arrive_airport: arrA,
+                    depart_time: depT ? new Date(depT).toISOString() : null,
+                    arrive_time: arrT ? new Date(arrT).toISOString() : null
+                  }).select().single()
+                  if (error) { alert(error.message); return }
+
+                  // If a file was chosen, upload & record invoice
+                  if (data?.id && flightInvoice) {
+                    try { await uploadInvoice('flight', data.id as string, flightInvoice) }
+                    catch (e:any) { alert('Flight saved, but invoice upload failed: ' + (e?.message||'unknown')) }
+                  }
+
+                  // reset
+                  setCarrier(''); setFno(''); setDepA(''); setArrA(''); setDepT(''); setArrT('')
+                  setFlightInvoice(null); setShowFlightForm(false)
+                  await reloadAll()
+                }}
+              >Add flight</button>
             </div>
           </div>
         )}
@@ -306,17 +343,33 @@ export default function TripDetailPage() {
               <span className="label">Booking ref</span>
               <input className="input" value={accRef} onChange={e=>setAccRef(e.target.value)} />
             </label>
+
+            {/* Optional invoice file at creation */}
+            <label className="block md:col-span-2">
+              <span className="label">Invoice (PDF or image, optional)</span>
+              <input className="input" type="file" accept="image/*,.pdf" onChange={e=>setAccInvoice(e.target.files?.[0] || null)} />
+            </label>
+
             <div className="flex items-end">
-              <button className="btn-primary" onClick={async ()=>{
-                const { error } = await sb.from('accommodations').insert({
-                  trip_id: id, name: accName, address: accAddr,
-                  check_in: accIn || null, check_out: accOut || null, booking_ref: accRef || null
-                })
-                if (error) { alert(error.message); return }
-                setAccName(''); setAccAddr(''); setAccIn(''); setAccOut(''); setAccRef('')
-                setShowAccForm(false)
-                await reloadAll()
-              }}>Add accommodation</button>
+              <button
+                className="btn-primary"
+                onClick={async ()=>{
+                  const { data, error } = await sb.from('accommodations').insert({
+                    trip_id: id, name: accName, address: accAddr,
+                    check_in: accIn || null, check_out: accOut || null, booking_ref: accRef || null
+                  }).select().single()
+                  if (error) { alert(error.message); return }
+
+                  if (data?.id && accInvoice) {
+                    try { await uploadInvoice('accommodation', data.id as string, accInvoice) }
+                    catch (e:any) { alert('Accommodation saved, but invoice upload failed: ' + (e?.message||'unknown')) }
+                  }
+
+                  setAccName(''); setAccAddr(''); setAccIn(''); setAccOut(''); setAccRef('')
+                  setAccInvoice(null); setShowAccForm(false)
+                  await reloadAll()
+                }}
+              >Add accommodation</button>
             </div>
           </div>
         )}
@@ -389,20 +442,36 @@ export default function TripDetailPage() {
               <span className="label">Cost (optional)</span>
               <input className="input" type="number" step="0.01" value={tCost} onChange={e=>setTCost(e.target.value)} />
             </label>
+
+            {/* Optional invoice file at creation */}
+            <label className="block md:col-span-2">
+              <span className="label">Invoice (PDF or image, optional)</span>
+              <input className="input" type="file" accept="image/*,.pdf" onChange={e=>setTInvoice(e.target.files?.[0] || null)} />
+            </label>
+
             <div className="flex items-end">
-              <button className="btn-primary" onClick={async ()=>{
-                const { error } = await sb.from('transports').insert({
-                  trip_id: id, type: tType, company: tCompany || null,
-                  pickup_location: tFrom || null, dropoff_location: tTo || null,
-                  start_time: tStart ? new Date(tStart).toISOString() : null,
-                  end_time: tEnd ? new Date(tEnd).toISOString() : null,
-                  cost: tCost ? Number(tCost) : null
-                })
-                if (error) { alert(error.message); return }
-                setTCompany(''); setTFrom(''); setTTo(''); setTStart(''); setTEnd(''); setTCost('')
-                setShowTransForm(false)
-                await reloadAll()
-              }}>Add transportation</button>
+              <button
+                className="btn-primary"
+                onClick={async ()=>{
+                  const { data, error } = await sb.from('transports').insert({
+                    trip_id: id, type: tType, company: tCompany || null,
+                    pickup_location: tFrom || null, dropoff_location: tTo || null,
+                    start_time: tStart ? new Date(tStart).toISOString() : null,
+                    end_time: tEnd ? new Date(tEnd).toISOString() : null,
+                    cost: tCost ? Number(tCost) : null
+                  }).select().single()
+                  if (error) { alert(error.message); return }
+
+                  if (data?.id && tInvoice) {
+                    try { await uploadInvoice('transport', data.id as string, tInvoice) }
+                    catch (e:any) { alert('Transportation saved, but invoice upload failed: ' + (e?.message||'unknown')) }
+                  }
+
+                  setTCompany(''); setTFrom(''); setTTo(''); setTStart(''); setTEnd(''); setTCost('')
+                  setTInvoice(null); setShowTransForm(false)
+                  await reloadAll()
+                }}
+              >Add transportation</button>
             </div>
           </div>
         )}
@@ -432,4 +501,3 @@ export default function TripDetailPage() {
     </div>
   )
 }
-
