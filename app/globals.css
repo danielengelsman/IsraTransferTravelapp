@@ -2,11 +2,60 @@
 @tailwind components;
 @tailwind utilities;
 
-@layer components {
-  .card { @apply bg-white border rounded-2xl p-4 shadow-sm; }
-  .btn { @apply inline-flex items-center gap-2 rounded-2xl border px-3 py-2 text-sm; }
-  .btn-primary { @apply inline-flex items-center gap-2 rounded-2xl bg-black text-white px-3 py-2 text-sm; }
-  .input { @apply mt-1 w-full rounded-xl border px-3 py-2; }
-  .label { @apply block text-sm text-gray-700; }
+/* Base look & feel */
+@layer base {
+  html, body { @apply min-h-screen bg-slate-50 text-slate-900; }
+  a { @apply underline-offset-2; }
 }
-html, body { background: #f7f7f8; }
+
+/* Reusable building blocks */
+@layer components {
+  .container-page    { @apply max-w-5xl mx-auto px-4; }
+
+  .navbar {
+    @apply sticky top-0 z-30 border-b bg-white/80 backdrop-blur;
+  }
+  .navbar-inner {
+    @apply container-page py-3 flex items-center justify-between gap-4;
+  }
+  .brand {
+    @apply flex items-center gap-2 no-underline;
+  }
+  .brand-name {
+    @apply font-semibold tracking-tight text-slate-800;
+  }
+  .brand-pill {
+    @apply rounded-full px-2 py-0.5 text-[10px] font-medium bg-brand-100 text-brand-800;
+  }
+
+  .card {
+    @apply bg-white border border-slate-200 rounded-2xl p-4 shadow-soft hover:shadow-hover transition-shadow;
+  }
+
+  .btn {
+    @apply inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm
+           shadow-soft hover:shadow-hover transition active:scale-[.98];
+  }
+  .btn-primary {
+    @apply inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium text-white
+           shadow-soft hover:shadow-hover transition active:scale-[.98];
+    background-image: linear-gradient(90deg, theme(colors.brand.900), theme(colors.brand.500));
+  }
+  .btn-ghost { @apply inline-flex items-center gap-2 rounded-xl px-3 py-2 text-sm text-slate-700 hover:bg-slate-100; }
+
+  .label { @apply block mb-1 text-sm font-medium text-slate-600; }
+  .input {
+    @apply w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none
+           focus:ring-4 focus:ring-brand-100 focus:border-brand-500;
+  }
+  .select { @apply input; }
+  .textarea { @apply input min-h-[120px]; }
+
+  .section-title { @apply text-xl font-semibold; }
+
+  /* Small utility to color the header divider */
+  .gradient-bar {
+    background-image: linear-gradient(90deg, theme(colors.brand.900), theme(colors.brand.500));
+    height: 3px;
+  }
+}
