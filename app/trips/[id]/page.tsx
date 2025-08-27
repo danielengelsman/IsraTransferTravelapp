@@ -8,18 +8,35 @@ import { createClient } from '@/lib/supabase/client'
 import InvoiceUpload from '@/components/InvoiceUpload'
 import { IconPlane, IconHotel, IconCar, IconPlus } from '@/components/Icons'
 
-type Trip = { id:string; title:string|null; description:string|null; location:string|null; start_date:string|null; end_date:string|null }
+type Trip = {
+  id:string; title:string|null; description:string|null; location:string|null;
+  start_date:string|null; end_date:string|null; itinerary?: any[]
+}
+
 type Flight = {
   id:string; trip_id:string;
   flight_type:'international'|'internal'|null; carrier:string|null; flight_number:string|null;
-  depart_airport:string|null; arrive_airport:string|null; depart_time:string|null; arrive_time:string|null; notes:string|null;
+  depart_airport:string|null; arrive_airport:string|null; depart_time:string|null; arrive_time:string|null; notes:string|null
 }
 type Accommodation = { id:string; trip_id:string; name:string|null; address:string|null; check_in:string|null; check_out:string|null; booking_ref:string|null; notes:string|null }
 type Transport = { id:string; trip_id:string; type:'car_hire'|'toll'|'train'|'taxi'|'other'|null; company:string|null; pickup_location:string|null; dropoff_location:string|null; start_time:string|null; end_time:string|null; cost:number|null; notes:string|null }
-type Invoice = { id:string; trip_id:string; section:'flight'|'accommodation'|'transport'|'other'|null; file_url:string|null; file_path:string|null; amount?:number|null; currency?:string|null; flight_id?:string|null; accommodation_id?:string|null; transport_id?:string|null }
+type Invoice = { id:string; trip_id:string; section:'flight'|'accommodation'|'transport'|'other'|null; file_url:string|null; file_path:string|null; name?:string|null; uploaded_at?:string|null; amount?:number|null; currency?:string|null; flight_id?:string|null; accommodation_id?:string|null; transport_id?:string|null }
 
-const fmtDate = (s?:string|null) => s ? new Date(s).toLocaleString(undefined, {year:'numeric',month:'short',day:'2-digit',hour:'2-digit',minute:'2-digit'}) : '—'
-const fmtRange = (a?:string|null,b?:string|null) => `${fmtDate(a)} → ${fmtDate(b)}`
+type TripEvent = {
+  id:string
+  title:string
+  type:'Meeting'|'Call'|'Booth'|'Flight'|'Other'
+  date:string          // YYYY-MM-DD
+  start_time?:string   // HH:MM (optional)
+  end_time?:string     // HH:MM (optional)
+  venue?:string
+  location?:string
+  notes?:string
+}
+
+const fmtDateTime = (iso?:string|null) =>
+  iso ? new Date(iso).toLocaleString(undefined,{year:'numeric',month:'short',day:'2-digit',hour:'2-digit',minute:'2-digit'}) : '—'
+const fmtRange = (a?:string|null,b?:string|null) => `${fmtDateTime(a)} → ${fmtDateTime(b)}`
 
 export default function TripDetailPage() {
   const params = useParams<{id:string}>()
@@ -33,28 +50,40 @@ export default function TripDetailPage() {
   const [trans,setTrans]=useState<Transport[]>([])
   const [invoices,setInvoices]=useState<Invoice[]>([])
   const [signedUrls,setSignedUrls]=useState<Record<string,string>>({})
+  const [attachments,setAttachments]=useState<{name:string; path:string; url:string}[]>([])
 
+  // expand states
   const [openFlight,setOpenFlight]=useState<Record<string,boolean>>({})
   const [openAcc,setOpenAcc]=useState<Record<string,boolean>>({})
   const [openTrans,setOpenTrans]=useState<Record<string,boolean>>({})
 
+  // show quick create forms
   const [showFlightForm,setShowFlightForm]=useState(false)
   const [showAccForm,setShowAccForm]=useState(false)
   const [showTransForm,setShowTransForm]=useState(false)
+  const [showEventForm,setShowEventForm]=useState(false)
 
-  // quick create forms
+  // quick create forms: flight
   const [fType,setFType]=useState<'international'|'internal'>('international')
   const [carrier,setCarrier]=useState(''); const [fno,setFno]=useState('')
   const [depA,setDepA]=useState(''); const [arrA,setArrA]=useState('')
   const [depT,setDepT]=useState(''); const [arrT,setArrT]=useState(''); const [flightInvoice,setFlightInvoice]=useState<File|null>(null)
 
+  // quick create forms: accommodation
   const [accName,setAccName]=useState(''); const [accAddr,setAccAddr]=useState('')
   const [accIn,setAccIn]=useState(''); const [accOut,setAccOut]=useState(''); const [accRef,setAccRef]=useState(''); const [accInvoice,setAccInvoice]=useState<File|null>(null)
 
+  // quick create forms: transport
   const [tType,setTType]=useState<'car_hire'|'toll'|'train'|'taxi'|'other'>('car_hire')
   const [tCompany,setTCompany]=useState(''); const [tFrom,setTFrom]=useState(''); const [tTo,setTTo]=useState('')
   const [tStart,setTStart]=useState(''); const [tEnd,setTEnd]=useState(''); const [tCost,setTCost]=useState(''); const [tInvoice,setTInvoice]=useState<File|null>(null)
 
+  // quick create forms: itinerary event
+  const [evTitle,setEvTitle]=useState(''); const [evType,setEvType]=useState<TripEvent['type']>('Meeting')
+  const [evDate,setEvDate]=useState(''); const [evStart,setEvStart]=useState(''); const [evEnd,setEvEnd]=useState('')
+  const [evVenue,setEvVenue]=useState(''); const [evLocation,setEvLocation]=useState(''); const [evNotes,setEvNotes]=useState('')
+
+  /* Helpers */
   function invFor(kind:'flight'|'accommodation'|'transport', itemId:string){
     return invoices.filter(i=>i.section===kind && (i as any)[`${kind}_id`]===itemId)
   }
@@ -70,6 +99,21 @@ export default function TripDetailPage() {
     if(section==='accommodation') payload.accommodation_id=itemId
     if(section==='transport') payload.transport_id=itemId
     const ins=await sb.from('invoices').insert(payload); if(ins.error) throw ins.error
+  }
+
+  async function listAttachments(){
+    // We’ll use the same private bucket "invoices", but under trip/<id>/attachments/
+    const prefix=`${id}/attachments`
+    const { data, error } = await sb.storage.from('invoices').list(prefix, { limit: 100, sortBy: { column: 'name', order: 'desc' } })
+    if(error){ setAttachments([]); return }
+    const rows = data || []
+    const out: {name:string; path:string; url:string}[] = []
+    for(const f of rows){
+      const fullPath = `${prefix}/${f.name}`
+      const { data: s } = await sb.storage.from('invoices').createSignedUrl(fullPath, 3600)
+      if(s?.signedUrl) out.push({ name: f.name, path: fullPath, url: s.signedUrl })
+    }
+    setAttachments(out)
   }
 
   async function reloadAll(){
@@ -94,6 +138,8 @@ export default function TripDetailPage() {
       if(row.file_path){ const {data:s}=await sb.storage.from('invoices').createSignedUrl(row.file_path,3600); if(s?.signedUrl) map[row.id]=s.signedUrl }
     }
     setSignedUrls(map)
+
+    await listAttachments()
     setStatus('ready')
   }
 
@@ -107,6 +153,7 @@ export default function TripDetailPage() {
   if(status==='not-found') return <div className="card">Trip not found. <Link href="/trips" className="underline">Back</Link></div>
   if(status==='error') return <div className="card" style={{color:'#b91c1c'}}>{msg}</div>
 
+  /* ===== Header ===== */
   const header = (
     <div className="trip-cover">
       <div style={{display:'flex',justifyContent:'space-between',gap:12,alignItems:'end'}}>
@@ -121,6 +168,7 @@ export default function TripDetailPage() {
     </div>
   )
 
+  /* ===== Summary row renderers (Flights, Accommodation, Transport) ===== */
   const FlightRow = (f:Flight) => {
     const open = !!openFlight[f.id]
     const invoicesFor = invFor('flight', f.id)
@@ -129,12 +177,8 @@ export default function TripDetailPage() {
         <div className="row" aria-expanded={open} onClick={()=>setOpenFlight(s=>({...s,[f.id]:!open}))}>
           <div className="row-left">
             <IconPlane /><div style={{minWidth:0}}>
-              <div className="row-title">
-                {(f.flight_type||'INTERNATIONAL').toUpperCase()} • {(f.carrier||'—')} {(f.flight_number||'')}
-              </div>
-              <div className="row-sub">
-                {(f.depart_airport||'—')} → {(f.arrive_airport||'—')} • {fmtRange(f.depart_time,f.arrive_time)}
-              </div>
+              <div className="row-title">{(f.flight_type||'INTERNATIONAL').toUpperCase()} • {(f.carrier||'—')} {(f.flight_number||'')}</div>
+              <div className="row-sub">{(f.depart_airport||'—')} → {(f.arrive_airport||'—')} • {fmtRange(f.depart_time,f.arrive_time)}</div>
             </div>
           </div>
           <div className="row-right">
@@ -142,13 +186,10 @@ export default function TripDetailPage() {
             <svg className="chevron" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round"/></svg>
           </div>
         </div>
-
         {open && (
           <div className="details">
             <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:8}}>
-              <button className="btn" onClick={(e)=>{e.stopPropagation(); setOpenFlight(s=>({...s,[f.id]:true}))}}>
-                Edit
-              </button>
+              <button className="btn" onClick={(e)=>{e.stopPropagation(); setOpenFlight(s=>({...s,[f.id]:true}))}}>Edit</button>
               <InvoiceUpload tripId={id!} section="flight" itemId={f.id} />
               {invoicesFor.map(i=>(
                 <a key={i.id} className="btn" href={signedUrls[i.id]||i.file_url||'#'} target="_blank">View invoice</a>
@@ -157,28 +198,17 @@ export default function TripDetailPage() {
             <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(220px,1fr))',gap:8}}>
               <label className="block"><span className="label">Type</span>
                 <select className="input" defaultValue={f.flight_type||'international'} onChange={e=>f.flight_type=e.target.value as any}>
-                  <option value="international">International</option>
-                  <option value="internal">Internal</option>
+                  <option value="international">International</option><option value="internal">Internal</option>
                 </select></label>
-              <label className="block"><span className="label">Carrier</span>
-                <input className="input" defaultValue={f.carrier||''} onChange={e=>f.carrier=e.target.value} /></label>
-              <label className="block"><span className="label">Flight #</span>
-                <input className="input" defaultValue={f.flight_number||''} onChange={e=>f.flight_number=e.target.value} /></label>
-              <label className="block"><span className="label">Depart airport</span>
-                <input className="input" defaultValue={f.depart_airport||''} onChange={e=>f.depart_airport=e.target.value} /></label>
-              <label className="block"><span className="label">Arrive airport</span>
-                <input className="input" defaultValue={f.arrive_airport||''} onChange={e=>f.arrive_airport=e.target.value} /></label>
-              <label className="block"><span className="label">Depart time</span>
-                <input className="input" type="datetime-local" defaultValue={f.depart_time?new Date(f.depart_time).toISOString().slice(0,16):''} onChange={e=>f.depart_time=e.target.value?new Date(e.target.value).toISOString():null} /></label>
-              <label className="block"><span className="label">Arrive time</span>
-                <input className="input" type="datetime-local" defaultValue={f.arrive_time?new Date(f.arrive_time).toISOString().slice(0,16):''} onChange={e=>f.arrive_time=e.target.value?new Date(e.target.value).toISOString():null} /></label>
+              <label className="block"><span className="label">Carrier</span><input className="input" defaultValue={f.carrier||''} onChange={e=>f.carrier=e.target.value} /></label>
+              <label className="block"><span className="label">Flight #</span><input className="input" defaultValue={f.flight_number||''} onChange={e=>f.flight_number=e.target.value} /></label>
+              <label className="block"><span className="label">Depart airport</span><input className="input" defaultValue={f.depart_airport||''} onChange={e=>f.depart_airport=e.target.value} /></label>
+              <label className="block"><span className="label">Arrive airport</span><input className="input" defaultValue={f.arrive_airport||''} onChange={e=>f.arrive_airport=e.target.value} /></label>
+              <label className="block"><span className="label">Depart time</span><input className="input" type="datetime-local" defaultValue={f.depart_time?new Date(f.depart_time).toISOString().slice(0,16):''} onChange={e=>f.depart_time=e.target.value?new Date(e.target.value).toISOString():null} /></label>
+              <label className="block"><span className="label">Arrive time</span><input className="input" type="datetime-local" defaultValue={f.arrive_time?new Date(f.arrive_time).toISOString().slice(0,16):''} onChange={e=>f.arrive_time=e.target.value?new Date(e.target.value).toISOString():null} /></label>
             </div>
             <div style={{marginTop:8,display:'flex',gap:8}}>
-              <button className="btn-primary" onClick={async()=>{
-                const { error } = await sb.from('flights').update(f).eq('id', f.id)
-                if(error) return alert(error.message)
-                await reloadAll()
-              }}>Save</button>
+              <button className="btn-primary" onClick={async()=>{ const { error } = await sb.from('flights').update(f).eq('id', f.id); if(error) return alert(error.message); await reloadAll() }}>Save</button>
               <button className="btn" onClick={()=>setOpenFlight(s=>({...s,[f.id]:false}))}>Close</button>
             </div>
           </div>
@@ -204,7 +234,6 @@ export default function TripDetailPage() {
             <svg className="chevron" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round"/></svg>
           </div>
         </div>
-
         {open && (
           <div className="details">
             <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:8}}>
@@ -214,23 +243,14 @@ export default function TripDetailPage() {
               ))}
             </div>
             <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(220px,1fr))',gap:8}}>
-              <label className="block"><span className="label">Name</span>
-                <input className="input" defaultValue={a.name||''} onChange={e=>a.name=e.target.value} /></label>
-              <label className="block"><span className="label">Address</span>
-                <input className="input" defaultValue={a.address||''} onChange={e=>a.address=e.target.value} /></label>
-              <label className="block"><span className="label">Check-in</span>
-                <input className="input" type="date" defaultValue={a.check_in||''} onChange={e=>a.check_in=e.target.value||null} /></label>
-              <label className="block"><span className="label">Check-out</span>
-                <input className="input" type="date" defaultValue={a.check_out||''} onChange={e=>a.check_out=e.target.value||null} /></label>
-              <label className="block"><span className="label">Booking ref</span>
-                <input className="input" defaultValue={a.booking_ref||''} onChange={e=>a.booking_ref=e.target.value||null} /></label>
+              <label className="block"><span className="label">Name</span><input className="input" defaultValue={a.name||''} onChange={e=>a.name=e.target.value} /></label>
+              <label className="block"><span className="label">Address</span><input className="input" defaultValue={a.address||''} onChange={e=>a.address=e.target.value} /></label>
+              <label className="block"><span className="label">Check-in</span><input className="input" type="date" defaultValue={a.check_in||''} onChange={e=>a.check_in=e.target.value||null} /></label>
+              <label className="block"><span className="label">Check-out</span><input className="input" type="date" defaultValue={a.check_out||''} onChange={e=>a.check_out=e.target.value||null} /></label>
+              <label className="block"><span className="label">Booking ref</span><input className="input" defaultValue={a.booking_ref||''} onChange={e=>a.booking_ref=e.target.value||null} /></label>
             </div>
             <div style={{marginTop:8,display:'flex',gap:8}}>
-              <button className="btn-primary" onClick={async()=>{
-                const { error } = await sb.from('accommodations').update(a).eq('id', a.id)
-                if(error) return alert(error.message)
-                await reloadAll()
-              }}>Save</button>
+              <button className="btn-primary" onClick={async()=>{ const { error } = await sb.from('accommodations').update(a).eq('id', a.id); if(error) return alert(error.message); await reloadAll() }}>Save</button>
               <button className="btn" onClick={()=>setOpenAcc(s=>({...s,[a.id]:false}))}>Close</button>
             </div>
           </div>
@@ -256,7 +276,6 @@ export default function TripDetailPage() {
             <svg className="chevron" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round"/></svg>
           </div>
         </div>
-
         {open && (
           <div className="details">
             <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:8}}>
@@ -268,28 +287,17 @@ export default function TripDetailPage() {
             <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(220px,1fr))',gap:8}}>
               <label className="block"><span className="label">Type</span>
                 <select className="input" defaultValue={t.type||'car_hire'} onChange={e=>t.type=e.target.value as any}>
-                  <option value="car_hire">Car hire</option><option value="toll">Toll</option>
-                  <option value="train">Train</option><option value="taxi">Taxi</option><option value="other">Other</option>
+                  <option value="car_hire">Car hire</option><option value="toll">Toll</option><option value="train">Train</option><option value="taxi">Taxi</option><option value="other">Other</option>
                 </select></label>
-              <label className="block"><span className="label">Company</span>
-                <input className="input" defaultValue={t.company||''} onChange={e=>t.company=e.target.value||null} /></label>
-              <label className="block"><span className="label">Pickup</span>
-                <input className="input" defaultValue={t.pickup_location||''} onChange={e=>t.pickup_location=e.target.value||null} /></label>
-              <label className="block"><span className="label">Dropoff</span>
-                <input className="input" defaultValue={t.dropoff_location||''} onChange={e=>t.dropoff_location=e.target.value||null} /></label>
-              <label className="block"><span className="label">Start</span>
-                <input className="input" type="datetime-local" defaultValue={t.start_time?new Date(t.start_time).toISOString().slice(0,16):''} onChange={e=>t.start_time=e.target.value?new Date(e.target.value).toISOString():null} /></label>
-              <label className="block"><span className="label">End</span>
-                <input className="input" type="datetime-local" defaultValue={t.end_time?new Date(t.end_time).toISOString().slice(0,16):''} onChange={e=>t.end_time=e.target.value?new Date(e.target.value).toISOString():null} /></label>
-              <label className="block"><span className="label">Cost</span>
-                <input className="input" type="number" defaultValue={t.cost?.toString()||''} onChange={e=>t.cost=e.target.value?Number(e.target.value):null} /></label>
+              <label className="block"><span className="label">Company</span><input className="input" defaultValue={t.company||''} onChange={e=>t.company=e.target.value||null} /></label>
+              <label className="block"><span className="label">Pickup</span><input className="input" defaultValue={t.pickup_location||''} onChange={e=>t.pickup_location=e.target.value||null} /></label>
+              <label className="block"><span className="label">Dropoff</span><input className="input" defaultValue={t.dropoff_location||''} onChange={e=>t.dropoff_location=e.target.value||null} /></label>
+              <label className="block"><span className="label">Start</span><input className="input" type="datetime-local" defaultValue={t.start_time?new Date(t.start_time).toISOString().slice(0,16):''} onChange={e=>t.start_time=e.target.value?new Date(e.target.value).toISOString():null} /></label>
+              <label className="block"><span className="label">End</span><input className="input" type="datetime-local" defaultValue={t.end_time?new Date(t.end_time).toISOString().slice(0,16):''} onChange={e=>t.end_time=e.target.value?new Date(e.target.value).toISOString():null} /></label>
+              <label className="block"><span className="label">Cost</span><input className="input" type="number" defaultValue={t.cost?.toString()||''} onChange={e=>t.cost=e.target.value?Number(e.target.value):null} /></label>
             </div>
             <div style={{marginTop:8,display:'flex',gap:8}}>
-              <button className="btn-primary" onClick={async()=>{
-                const { error } = await sb.from('transports').update(t).eq('id', t.id)
-                if(error) return alert(error.message)
-                await reloadAll()
-              }}>Save</button>
+              <button className="btn-primary" onClick={async()=>{ const { error } = await sb.from('transports').update(t).eq('id', t.id); if(error) return alert(error.message); await reloadAll() }}>Save</button>
               <button className="btn" onClick={()=>setOpenTrans(s=>({...s,[t.id]:false}))}>Close</button>
             </div>
           </div>
@@ -298,14 +306,49 @@ export default function TripDetailPage() {
     )
   }
 
+  /* ===== Itinerary helpers ===== */
+  const events:TripEvent[] = Array.isArray(trip?.itinerary) ? trip!.itinerary as TripEvent[] : []
+  const byDate = events.slice().sort((a,b)=>a.date.localeCompare(b.date))
+    .reduce<Record<string,TripEvent[]>>((acc,ev)=>{ (acc[ev.date] ||= []).push(ev); return acc }, {})
+
+  async function addEvent(){
+    const newEvent:TripEvent = {
+      id: String(Date.now()),
+      title: evTitle || 'Untitled',
+      type: evType,
+      date: evDate,
+      start_time: evStart || undefined,
+      end_time: evEnd || undefined,
+      venue: evVenue || undefined,
+      location: evLocation || undefined,
+      notes: evNotes || undefined,
+    }
+    const next = [...events, newEvent]
+    const { error } = await sb.from('trips').update({ itinerary: next }).eq('id', id)
+    if(error) return alert(error.message)
+    setEvTitle(''); setEvType('Meeting'); setEvDate(''); setEvStart(''); setEvEnd(''); setEvVenue(''); setEvLocation(''); setEvNotes('')
+    setShowEventForm(false)
+    await reloadAll()
+  }
+
+  async function deleteEvent(evId:string){
+    const next = events.filter(e=>e.id!==evId)
+    const { error } = await sb.from('trips').update({ itinerary: next }).eq('id', id)
+    if(error) return alert(error.message)
+    await reloadAll()
+  }
+
+  /* ===== UI ===== */
   return (
     <div className="space-y-6">
       {header}
 
-      {/* Two-column layout */}
+      {/* Two-column layout (Flights + Itinerary)  |  (Accommodation, Transportation, Attachments) */}
       <div className="trip-grid">
-        {/* LEFT: Flights (wide) */}
+        {/* LEFT */}
         <div className="stack">
+
+          {/* Flights */}
           <section className="section">
             <div className="section-head">
               <h2 className="section-title" style={{display:'flex',alignItems:'center',gap:8}}><IconPlane/> Flights</h2>
@@ -325,8 +368,7 @@ export default function TripDetailPage() {
                     <label className="block"><span className="label">Arrive airport</span><input className="input" value={arrA} onChange={e=>setArrA(e.target.value)} /></label>
                     <label className="block"><span className="label">Depart time</span><input className="input" type="datetime-local" value={depT} onChange={e=>setDepT(e.target.value)} /></label>
                     <label className="block"><span className="label">Arrive time</span><input className="input" type="datetime-local" value={arrT} onChange={e=>setArrT(e.target.value)} /></label>
-                    <label className="block"><span className="label">Invoice (optional)</span>
-                      <input className="input" type="file" accept="image/*,.pdf" onChange={e=>setFlightInvoice(e.target.files?.[0]||null)} /></label>
+                    <label className="block"><span className="label">Invoice (optional)</span><input className="input" type="file" accept="image/*,.pdf" onChange={e=>setFlightInvoice(e.target.files?.[0]||null)} /></label>
                   </div>
                   <div style={{marginTop:8}}>
                     <button className="btn-primary" onClick={async()=>{
@@ -348,17 +390,72 @@ export default function TripDetailPage() {
               )}
 
               {flights.length===0 ? (
-                <div className="row" onClick={()=>setShowFlightForm(true)}>
-                  <div className="row-left"><IconPlane/><div><div className="row-title">No flights yet</div><div className="row-sub">Click to add your first flight</div></div></div><IconPlus/>
-                </div>
+                <div className="row" onClick={()=>setShowFlightForm(true)}><div className="row-left"><IconPlane/><div><div className="row-title">No flights yet</div><div className="row-sub">Click to add your first flight</div></div></div><IconPlus/></div>
               ) : (
                 flights.map(f => <div key={f.id}>{FlightRow(f)}</div>)
               )}
             </div>
           </section>
+
+          {/* Trip Itinerary (NEW) */}
+          <section className="section">
+            <div className="section-head">
+              <h2 className="section-title" style={{display:'flex',alignItems:'center',gap:8}}>
+                {/* suitcase icon via plane works fine; keep it simple */}
+                Trip Itinerary
+              </h2>
+              <button className="btn" onClick={()=>setShowEventForm(s=>!s)}>{showEventForm ? 'Cancel' : (<><IconPlus/> Add Event</>)}</button>
+            </div>
+            <div className="section-card">
+              {showEventForm && (
+                <div className="details" onClick={e=>e.stopPropagation()}>
+                  <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(220px,1fr))',gap:8}}>
+                    <label className="block"><span className="label">Title</span><input className="input" value={evTitle} onChange={e=>setEvTitle(e.target.value)} placeholder="e.g. Booth setup" /></label>
+                    <label className="block"><span className="label">Type</span>
+                      <select className="input" value={evType} onChange={e=>setEvType(e.target.value as TripEvent['type'])}>
+                        <option>Meeting</option><option>Call</option><option>Booth</option><option>Flight</option><option>Other</option>
+                      </select></label>
+                    <label className="block"><span className="label">Date</span><input className="input" type="date" value={evDate} onChange={e=>setEvDate(e.target.value)} /></label>
+                    <label className="block"><span className="label">Start time</span><input className="input" type="time" value={evStart} onChange={e=>setEvStart(e.target.value)} /></label>
+                    <label className="block"><span className="label">End time</span><input className="input" type="time" value={evEnd} onChange={e=>setEvEnd(e.target.value)} /></label>
+                    <label className="block"><span className="label">Venue</span><input className="input" value={evVenue} onChange={e=>setEvVenue(e.target.value)} placeholder="Exhibition Hall A" /></label>
+                    <label className="block"><span className="label">Location</span><input className="input" value={evLocation} onChange={e=>setEvLocation(e.target.value)} placeholder="Tel Aviv" /></label>
+                    <label className="block" style={{gridColumn:'1 / -1'}}><span className="label">Notes</span><textarea className="input" rows={3} value={evNotes} onChange={e=>setEvNotes(e.target.value)} /></label>
+                  </div>
+                  <div style={{marginTop:8}}>
+                    <button className="btn-primary" onClick={addEvent}>Add event</button>
+                  </div>
+                </div>
+              )}
+
+              {events.length===0 ? (
+                <div className="row" onClick={()=>setShowEventForm(true)}>
+                  <div className="row-left"><div className="row-title">No itinerary events yet</div></div><IconPlus/>
+                </div>
+              ) : (
+                <div className="timeline">
+                  {Object.entries(byDate).map(([date, list])=>(
+                    <div key={date}>
+                      <div className="timeline-day">{new Date(date).toLocaleDateString(undefined,{weekday:'long',year:'numeric',month:'short',day:'numeric'})}</div>
+                      {list.map(ev=>(
+                        <div className="event-card" key={ev.id} style={{display:'grid',gap:6}}>
+                          <div className="event-title">{ev.title}</div>
+                          <div className="event-sub">{ev.type} • {ev.start_time||'-'}{ev.end_time?`–${ev.end_time}`:''} • {ev.venue||''}</div>
+                          {(ev.location||ev.notes) && <div>{ev.location||''}{ev.location&&ev.notes?' — ':''}{ev.notes||''}</div>}
+                          <div style={{display:'flex',gap:8,marginTop:4}}>
+                            <button className="btn" onClick={async()=>{ if(confirm('Delete this event?')) await deleteEvent(ev.id) }}>Delete</button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </section>
         </div>
 
-        {/* RIGHT: Accommodation + Transportation (stacked) */}
+        {/* RIGHT */}
         <div className="stack">
           {/* Accommodation */}
           <section className="section">
@@ -379,9 +476,7 @@ export default function TripDetailPage() {
                   </div>
                   <div style={{marginTop:8}}>
                     <button className="btn-primary" onClick={async()=>{
-                      const ins=await sb.from('accommodations').insert({
-                        trip_id:id, name:accName, address:accAddr, check_in:accIn||null, check_out:accOut||null, booking_ref:accRef||null
-                      }).select().single()
+                      const ins=await sb.from('accommodations').insert({ trip_id:id, name:accName, address:accAddr, check_in:accIn||null, check_out:accOut||null, booking_ref:accRef||null }).select().single()
                       if(ins.error) return alert(ins.error.message)
                       if(ins.data?.id && accInvoice){ try{ await uploadInvoice('accommodation', ins.data.id, accInvoice) }catch(e:any){ alert('Accommodation saved, invoice upload failed: '+(e?.message||'unknown')) } }
                       setAccName(''); setAccAddr(''); setAccIn(''); setAccOut(''); setAccRef(''); setAccInvoice(null)
@@ -411,8 +506,7 @@ export default function TripDetailPage() {
                   <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(220px,1fr))',gap:8}}>
                     <label className="block"><span className="label">Type</span>
                       <select className="input" value={tType} onChange={e=>setTType(e.target.value as any)}>
-                        <option value="car_hire">Car hire</option><option value="toll">Toll</option>
-                        <option value="train">Train</option><option value="taxi">Taxi</option><option value="other">Other</option>
+                        <option value="car_hire">Car hire</option><option value="toll">Toll</option><option value="train">Train</option><option value="taxi">Taxi</option><option value="other">Other</option>
                       </select></label>
                     <label className="block"><span className="label">Company</span><input className="input" value={tCompany} onChange={e=>setTCompany(e.target.value)} /></label>
                     <label className="block"><span className="label">Pickup</span><input className="input" value={tFrom} onChange={e=>setTFrom(e.target.value)} /></label>
@@ -442,6 +536,41 @@ export default function TripDetailPage() {
                 <div className="row" onClick={()=>setShowTransForm(true)}><div className="row-left"><IconCar/><div><div className="row-title">No transportation yet</div><div className="row-sub">Click to add costs and car hire</div></div></div><IconPlus/></div>
               ) : (
                 trans.map(t => <div key={t.id}>{TransRow(t)}</div>)
+              )}
+            </div>
+          </section>
+
+          {/* Attachments (NEW) */}
+          <section className="section">
+            <div className="section-head">
+              <h2 className="section-title" style={{display:'flex',alignItems:'center',gap:8}}>Attachments</h2>
+              <label className="btn" htmlFor="attach-file">Upload</label>
+              <input id="attach-file" className="input" type="file" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx" style={{display:'none'}}
+                onChange={async e=>{
+                  const file=e.target.files?.[0]; if(!file) return
+                  const safe=file.name.replace(/[^\w.\-]+/g,'_')
+                  const path=`${id}/attachments/${Date.now()}_${safe}`
+                  const up=await sb.storage.from('invoices').upload(path,file,{upsert:false})
+                  if(up.error) return alert(up.error.message)
+                  await listAttachments()
+                  e.currentTarget.value='' // reset input
+                }} />
+            </div>
+            <div className="section-card">
+              {attachments.length===0 ? (
+                <div className="row"><div className="row-left"><div><div className="row-title">No files have been attached.</div><div className="row-sub">Use the Upload button above.</div></div></div></div>
+              ) : (
+                <div className="files">
+                  {attachments.map(f=>(
+                    <div key={f.path} className="file-row">
+                      <a href={f.url} target="_blank" rel="noreferrer">{f.name}</a>
+                      <div className="file-actions">
+                        <a className="btn" href={f.url} target="_blank" rel="noreferrer">View</a>
+                        <button className="btn" onClick={async()=>{ if(confirm('Delete this file?')){ const rm=await sb.storage.from('invoices').remove([f.path]); if(rm.error) return alert(rm.error.message); await listAttachments() }}}>Delete</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
           </section>
