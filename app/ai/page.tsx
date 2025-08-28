@@ -54,34 +54,36 @@ export default function TripAIPage() {
   }
 
   const sendToAI = async () => {
-  setError('')
-  setReply('')
-  setProposals([])
-  setSending(true)
   try {
+    setSending(true)
+    setError('')
+
     const fd = new FormData()
-    if (prompt.trim()) fd.append('prompt', prompt.trim())
+    if (prompt) fd.append('prompt', prompt)
     if (tripId) fd.append('trip_id', tripId)
     files.forEach(f => fd.append('files', f, f.name))
+
+    // 👇 get the access token and include it
+    const { data: { session } } = await sb.auth.getSession()
+    const token = session?.access_token
 
     const res = await fetch('/api/ai/chat', {
       method: 'POST',
       body: fd,
-      credentials: 'include', // <— important so cookies go with the request
+      credentials: 'include',                   // <-- ensure cookies go too
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
     })
 
     const j = await res.json().catch(() => ({} as any))
-
     if (!res.ok) {
-      // DO NOT navigate; just show error so the page doesn’t “refresh”
-      setError(j?.error || `AI request failed (status ${res.status})`)
+      setError(j?.error || 'AI request failed')
       return
     }
 
-    setReply(j?.reply || '')
-    setProposals(Array.isArray(j?.proposals) ? j.proposals : [])
+    setReply(j.reply || '')
+    setProposals(Array.isArray(j.proposals) ? j.proposals : [])
   } catch (e: any) {
-    setError(e?.message || 'Network error')
+    setError(e?.message || 'AI request failed')
   } finally {
     setSending(false)
   }
