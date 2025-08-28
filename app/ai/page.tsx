@@ -53,36 +53,38 @@ export default function TripAIPage() {
   }
 
   const sendToAI = async () => {
-    setError('')
-    setReply('')
-    setProposals([])
-    setSending(true)
-    try {
-      const fd = new FormData()
-      if (prompt.trim()) fd.append('prompt', prompt.trim())
-      if (tripId) fd.append('trip_id', tripId)
-      files.forEach(f => fd.append('files', f, f.name))
+  setError('')
+  setReply('')
+  setProposals([])
+  setSending(true)
+  try {
+    const fd = new FormData()
+    if (prompt.trim()) fd.append('prompt', prompt.trim())
+    if (tripId) fd.append('trip_id', tripId)
+    files.forEach(f => fd.append('files', f, f.name))
 
-      const res = await fetch('/api/ai/chat', {
-        method: 'POST',
-        body: fd,
-        credentials: 'include', // ensure auth cookie is sent
-      })
-      const j = await res.json().catch(() => ({} as any))
-      if (!res.ok) {
-        if (res.status === 401) router.push('/login?next=/ai')
-        setError(j?.error || 'AI request failed')
-        return
-      }
-      setReply(j?.reply || '')
-      setProposals(Array.isArray(j?.proposals) ? j.proposals : [])
-    } catch (e: any) {
-      setError(e?.message || 'Network error')
-    } finally {
-      setSending(false)
+    const res = await fetch('/api/ai/chat', {
+      method: 'POST',
+      body: fd,
+      credentials: 'include', // <— important so cookies go with the request
+    })
+
+    const j = await res.json().catch(() => ({} as any))
+
+    if (!res.ok) {
+      // DO NOT navigate; just show error so the page doesn’t “refresh”
+      setError(j?.error || `AI request failed (status ${res.status})`)
+      return
     }
-  }
 
+    setReply(j?.reply || '')
+    setProposals(Array.isArray(j?.proposals) ? j.proposals : [])
+  } catch (e: any) {
+    setError(e?.message || 'Network error')
+  } finally {
+    setSending(false)
+  }
+}
   const actOnProposal = async (id: string, action: 'apply' | 'reject') => {
     try {
       const res = await fetch(`/api/ai/proposals/${id}/${action}`, {
