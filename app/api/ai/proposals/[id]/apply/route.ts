@@ -4,21 +4,31 @@ import { createClient } from '@supabase/supabase-js'
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL as string
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY as string
 
-// NOTE: don't annotate the second arg; Netlify/Next was complaining about it.
-export async function POST(req: Request, _ctx: any) {
-  const id = _ctx?.params?.id as string | undefined
+function getTokenFromRequest(req: Request) {
+  const auth = req.headers.get('authorization') || ''
+  if (/^Bearer\s+/i.test(auth)) return auth.replace(/^Bearer\s+/i, '')
+  const cookie = req.headers.get('cookie') || ''
+  const m = cookie.match(/(?:^|;\s*)sb-access-token=([^;]+)/)
+  return m ? decodeURIComponent(m[1]) : null
+}
+
+// Do NOT add a typed second arg — Next 15 complains in your environment.
+export async function POST(req: Request, ctx: any) {
+  const id = ctx?.params?.id as string | undefined
   if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 })
 
-  // Require the Supabase session token from the client
-  const token = (req.headers.get('authorization') || '').replace(/^Bearer\s+/i, '')
+  const token = getTokenFromRequest(req)
   if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  // Supabase client with user context (so RLS works)
   const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     global: { headers: { Authorization: `Bearer ${token}` } },
   })
 
-  // Load proposal
+  // (Optional) validate token quickly; if invalid, 401
+  const { data: userRes, error: userErr } = await sb.auth.getUser()
+  if (userErr || !userRes?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  // Load proposal (RLS will enforce ownership)
   const { data: p, error: e1 } = await sb.from('ai_proposals').select('*').eq('id', id).single()
   if (e1 || !p) return NextResponse.json({ error: e1?.message || 'Not found' }, { status: 404 })
 
@@ -77,7 +87,6 @@ export async function POST(req: Request, _ctx: any) {
       const { error } = await sb.from('trips').update({ itinerary: next }).eq('id', p.trip_id)
       if (error) throw error
     }
-    // other kinds -> just mark applied below
   } catch (e: any) {
     err = e?.message || 'Failed to apply proposal'
   }
