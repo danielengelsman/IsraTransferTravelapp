@@ -4,6 +4,7 @@ export const dynamic = 'force-dynamic'
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
+import Sidebar from '@/components/Sidebar'
 
 type TripStatus = 'draft' | 'awaiting_approval' | 'approved'
 
