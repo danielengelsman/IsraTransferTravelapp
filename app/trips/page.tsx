@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useMe } from '@/lib/useMe'
+import Sidebar from '@/components/Sidebar'
 
 type TripStatus = 'draft' | 'awaiting_approval' | 'approved'
 type Trip = {
@@ -122,7 +123,9 @@ export default function TripsPage() {
   }
 
   // MAIN
-  return (
+return (
+  <div style={{ display: 'grid', gridTemplateColumns: '260px 1fr', gap: 16 }}>
+    <Sidebar />
     <div className="space-y-6">
       {/* Page header */}
       <div className="trip-cover" style={{ padding: 16, borderRadius: 16 }}>
@@ -222,5 +225,5 @@ export default function TripsPage() {
         )}
       </div>
     </div>
-  )
-}
+  </div>
+)
