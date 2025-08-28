@@ -126,7 +126,9 @@ export default function TripsPage() {
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '260px 1fr', gap: 16 }}>
       <Sidebar />
-      <div className="space-y-6">
+      <div style={{ display: 'grid', gridTemplateColumns: '260px 1fr', gap: 16, alignItems: 'start' }}>
+  <Sidebar />
+  <main className="space-y-6">
         {/* Page header */}
         <div className="trip-cover" style={{ padding: 16, borderRadius: 16 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
@@ -221,6 +223,7 @@ export default function TripsPage() {
           )}
         </div>
       </div>
-    </div>
+     </main>
+</div>
   )
 }
