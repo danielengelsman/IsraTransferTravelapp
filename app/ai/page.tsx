@@ -47,7 +47,11 @@ export default function TripAIPage() {
         if (!cancelled) setAuth('need-login')
         return
       }
-      const { data: t } = await sb.from('trips').select('id,title').order('start_date', { ascending: false }).limit(100)
+      const { data: t } = await sb
+        .from('trips')
+        .select('id,title')
+        .order('start_date', { ascending: false })
+        .limit(100)
       if (!cancelled) {
         setTrips((t as TripLite[]) || [])
         setAuth('ready')
@@ -56,11 +60,11 @@ export default function TripAIPage() {
     return () => { cancelled = true }
   }, [sb])
 
-  // ----- File picker (typed to avoid TS error) -----
+  // ----- File picker -----
   function onPickFiles(e: React.ChangeEvent<HTMLInputElement>) {
-    const selected: File[] = Array.from(e.target.files ?? [])
-    if (selected.length === 0) return
-    setFiles((prev: File[]) => [...prev, ...selected])
+    const selected = Array.from(e.target.files || []) as File[]
+    if (!selected.length) return
+    setFiles(prev => [...prev, ...selected])
   }
 
   // ----- Send to AI (includes Bearer token) -----
@@ -74,19 +78,19 @@ export default function TripAIPage() {
     }
     setSending(true)
     try {
+      // get the Supabase session token
+      const { data: { session } } = await sb.auth.getSession()
+      const token = session?.access_token
+
       const fd = new FormData()
       if (prompt) fd.append('prompt', prompt)
       if (tripId) fd.append('trip_id', tripId)
       files.forEach(f => fd.append('files', f, f.name))
 
-      const { data: { session } } = await sb.auth.getSession()
-      const token = session?.access_token
+      const headers: Record<string, string> = {}
+      if (token) headers.authorization = `Bearer ${token}`
 
-      const res = await fetch('/api/ai/chat', {
-        method: 'POST',
-        headers: token ? { authorization: `Bearer ${token}` } : {},
-        body: fd,
-      })
+      const res = await fetch('/api/ai/chat', { method: 'POST', body: fd, headers })
       const j = await res.json().catch(() => ({} as any))
       if (!res.ok) {
         setError(j?.error || 'AI request failed')
@@ -101,13 +105,16 @@ export default function TripAIPage() {
     }
   }
 
-  // ----- Apply / Reject (Bearer token) -----
+  // ----- Apply/Reject (already includes Bearer token) -----
   async function actOnProposal(id: string, action: 'apply' | 'reject') {
     const { data: { session } } = await sb.auth.getSession()
     const token = session?.access_token
+    const headers: Record<string, string> = {}
+    if (token) headers.authorization = `Bearer ${token}`
+
     const res = await fetch(`/api/ai/proposals/${id}/${action}`, {
       method: 'POST',
-      headers: token ? { authorization: `Bearer ${token}` } : {},
+      headers,
     })
     const j = await res.json().catch(() => ({} as any))
     if (!res.ok) {
