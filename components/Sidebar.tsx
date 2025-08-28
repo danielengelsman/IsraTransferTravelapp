@@ -1,144 +1,75 @@
 'use client'
+
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { ReactNode } from 'react'
-
-function NavItem({
-  href,
-  active,
-  icon,
-  children,
-}: {
-  href: string
-  active: boolean
-  icon: ReactNode
-  children: ReactNode
-}) {
-  return (
-    <Link
-      href={href}
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 12,
-        padding: '12px 14px',
-        borderRadius: 14,
-        fontWeight: 800,
-        textDecoration: 'none',
-        background: active ? '#2563eb' : 'transparent',
-        color: active ? '#ffffff' : '#0f172a',
-        boxShadow: active ? '0 4px 12px rgba(37,99,235,.25)' : 'none',
-        margin: '6px 0',
-      }}
-    >
-      <span
-        style={{
-          width: 22,
-          height: 22,
-          display: 'inline-flex',
-          color: active ? '#ffffff' : '#0f172a',
-        }}
-      >
-        {icon}
-      </span>
-      <span>{children}</span>
-    </Link>
-  )
-}
 
 export default function Sidebar() {
   const pathname = usePathname()
-  const isTrips = pathname.startsWith('/trips') && pathname !== '/trips/new'
-  const isNew = pathname === '/trips/new'
-  const isReports = pathname.startsWith('/reports')
 
-  return (
-    <aside style={{ position: 'sticky', top: 16 }}>
-      <div
+  function Item({ href, label }: { href: string; label: string }) {
+    const active = pathname === href || pathname?.startsWith(href + '/')
+    return (
+      <Link
+        href={href}
+        className="side-link"
         style={{
-          padding: 16,
-          borderRadius: 16,
-          background: '#ffffff',
-          boxShadow: '0 1px 3px rgba(0,0,0,.06)',
+          display: 'block',
+          padding: '10px 12px',
+          borderRadius: 10,
+          fontWeight: 700,
+          textDecoration: 'none',
+          color: active ? '#0f172a' : '#0b1324',
+          background: active
+            ? 'linear-gradient(180deg, #ffffff 0%, #f3f4f6 100%)'
+            : 'transparent',
+          border: active ? '1px solid #e5e7eb' : '1px solid transparent',
         }}
       >
-        <div
-          style={{
-            fontSize: 13,
-            fontWeight: 800,
-            letterSpacing: '.08em',
-            color: '#6b7280',
-            margin: '0 0 10px',
-          }}
-        >
-          OVERVIEW
-        </div>
+        {label}
+      </Link>
+    )
+  }
 
-        <NavItem
-          href="/"
-          active={pathname === '/'}
-          icon={
-            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2">
-              <rect x="3" y="3" width="7" height="7" rx="2" />
-              <rect x="14" y="3" width="7" height="7" rx="2" />
-              <rect x="3" y="14" width="7" height="7" rx="2" />
-              <rect x="14" y="14" width="7" height="7" rx="2" />
-            </svg>
-          }
-        >
-          Dashboard
-        </NavItem>
-
-        <div
-          style={{
-            fontSize: 13,
-            fontWeight: 800,
-            letterSpacing: '.08em',
-            color: '#6b7280',
-            margin: '20px 0 10px',
-          }}
-        >
-          TRAVEL MANAGEMENT
-        </div>
-
-        <NavItem
-          href="/trips/new"
-          active={isNew}
-          icon={
-            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-              <path d="M12 5v14M5 12h14" />
-            </svg>
-          }
-        >
-          New Trip
-        </NavItem>
-
-        <NavItem
-          href="/trips"
-          active={isTrips}
-          icon={
-            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2">
-              <rect x="3" y="5" width="18" height="16" rx="2" />
-              <path d="M16 3v4M8 3v4M3 10h18" strokeLinecap="round" />
-            </svg>
-          }
-        >
-          All Trips
-        </NavItem>
-
-        <NavItem
-          href="/reports"
-          active={isReports}
-          icon={
-            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M7 3h7l5 5v13a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z" />
-              <path d="M14 3v6h6" />
-            </svg>
-          }
-        >
-          Reports
-        </NavItem>
+  return (
+    <aside
+      style={{
+        position: 'sticky',
+        top: 16,
+        alignSelf: 'start',
+        display: 'grid',
+        gap: 8,
+        padding: 12,
+        borderRadius: 16,
+        background: 'linear-gradient(180deg, #ffffff 0%, #f8fafc 100%)',
+        border: '1px solid #e5e7eb',
+        minWidth: 0,
+      }}
+    >
+      <div style={{ fontWeight: 900, fontSize: 18, marginBottom: 4 }}>
+        IsraTransfer
       </div>
+
+      <Item href="/trips" label="All Trips" />
+      <Item href="/trips/new" label="New Trip" />
+      <Item href="/reports" label="Reports" />
+
+      <div style={{ height: 8 }} />
+
+      {/* Logout goes to the /logout page we just created */}
+      <Link
+        href="/logout"
+        className="btn"
+        style={{
+          textAlign: 'center',
+          fontWeight: 800,
+          border: '1px solid #e5e7eb',
+          padding: '10px 12px',
+          borderRadius: 10,
+          textDecoration: 'none',
+        }}
+      >
+        Log out
+      </Link>
     </aside>
   )
 }
