@@ -228,6 +228,28 @@ export default function TripDetailPage() {
             <div style={{marginTop:8,display:'flex',gap:8}}>
               <button className="btn-primary" onClick={async()=>{ const { error } = await sb.from('flights').update(f).eq('id', f.id); if(error) return alert(error.message); await reloadAll() }}>Save</button>
               <button className="btn" onClick={()=>setOpenFlight(s=>({...s,[f.id]:false}))}>Close</button>
+              {/* Admin can approve immediately from Draft */}
+{me?.role === 'admin' && trip?.status === 'draft' && (
+  <button
+    className="btn-primary"
+    onClick={async () => {
+      if (!confirm('Approve this trip now?')) return
+      const { error } = await sb
+        .from('trips')
+        .update({
+          status: 'approved',
+          submitted_at: trip?.submitted_at ?? new Date().toISOString(), // optional
+          approved_by: me!.id,
+          approved_at: new Date().toISOString(),
+        })
+        .eq('id', id)
+      if (error) return alert(error.message)
+      await reloadTrip() // your helper that refetches the trip
+    }}
+  >
+    Approve now
+  </button>
+)}
             </div>
           </div>
         )}
