@@ -1,79 +1,79 @@
-import { NextResponse } from 'next/server'
+// app/api/ai/make-trip/route.ts
+import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabase } from '@/lib/supabase/server'
 
-export const runtime = 'nodejs'
+type TripInput = {
+  title: string
+  dest_city?: string | null
+  dest_country?: string | null
+  start_date?: string | null
+  end_date?: string | null
+}
 
-type AiTrip = {
-  trip: {
-    title: string
-    dest_city?: string
-    dest_country?: string
-    start_date?: string   // ISO date
-    end_date?: string     // ISO date
+function normalizeTripInput(raw: any): TripInput {
+  // Accept either { title, ... } or { trip: { title, ... } }
+  const src = raw?.trip && typeof raw.trip === 'object' ? raw.trip : raw
+  const clean = (v: any) => (v === undefined || v === '' ? null : String(v))
+  return {
+    title: String(src?.title ?? 'New Trip'),
+    dest_city: clean(src?.dest_city),
+    dest_country: clean(src?.dest_country),
+    start_date: clean(src?.start_date),
+    end_date: clean(src?.end_date),
   }
 }
 
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
   try {
     const sb = createServerSupabase()
-    const { data: { user } } = await sb.auth.getUser()
-    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    const { prompt } = await req.json()
-    if (!prompt) return NextResponse.json({ error: 'Missing prompt' }, { status: 400 })
-
-    // Ask OpenAI for STRICT JSON
-    const sys = `You are a travel trip builder. 
-Return ONLY compact JSON matching this TypeScript type exactly (no prose, no markdown):
-type AiTrip = { trip: { title: string; dest_city?: string; dest_country?: string; start_date?: string; end_date?: string } }.
-Dates must be ISO (YYYY-MM-DD). If unsure, omit the field.`
-    const payload = {
-      model: 'gpt-4o-mini',
-      messages: [
-        { role: 'system', content: sys },
-        { role: 'user', content: prompt }
-      ],
-      temperature: 0.2,
-      response_format: { type: 'json_object' }
+    // Auth
+    const {
+      data: { user },
+      error: authErr,
+    } = await sb.auth.getUser()
+    if (authErr || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const r = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        authorization: `Bearer ${process.env.OPENAI_API_KEY!}`,
-      },
-      body: JSON.stringify(payload),
-    })
-    if (!r.ok) {
-      const t = await r.text()
-      return NextResponse.json({ error: `OpenAI error: ${t}` }, { status: 500 })
+    // Body
+    let body: any = {}
+    try {
+      body = await req.json()
+    } catch {
+      body = {}
     }
-    const jj = await r.json()
-    let parsed: AiTrip | null = null
-    try { parsed = JSON.parse(jj.choices?.[0]?.message?.content || '{}') } catch { parsed = null }
+    const tripInput = normalizeTripInput(body)
 
-    // Fallback if model misbehaves
-    const tripInput = parsed?.trip ?? { title: prompt.slice(0, 80) }
+    // Insert payload
+    const base = {
+      title: tripInput.title,
+      dest_city: tripInput.dest_city,
+      dest_country: tripInput.dest_country,
+      start_date: tripInput.start_date,
+      end_date: tripInput.end_date,
+    }
 
-    // Insert trip
-    const { data, error } = await sb.from('trips').insert({
-      created_by: user.id,
-      title: tripInput.title || 'New Trip',
-      dest_city: tripInput.dest_city || null,
-      dest_country: tripInput.dest_country || null,
-      start_date: tripInput.start_date || null,
-      end_date: tripInput.end_date || null,
-    }).select('id,title').single()
+    // Try insert with created_by; if the column doesn't exist, retry without it.
+    let result = await sb
+      .from('trips')
+      .insert({ ...base, created_by: user.id })
+      .select('id')
+      .single()
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 400 })
+    if (result.error && /created_by/.test(result.error.message)) {
+      result = await sb.from('trips').insert(base).select('id').single()
+    }
 
-    return NextResponse.json({
-      ok: true,
-      trip_id: data.id,
-      reply: `Created trip: ${data.title}`,
-    })
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message || 'Server error' }, { status: 500 })
+    if (result.error) {
+      return NextResponse.json({ error: result.error.message }, { status: 400 })
+    }
+
+    return NextResponse.json({ ok: true, trip_id: result.data.id })
+  } catch (err: any) {
+    return NextResponse.json(
+      { error: err?.message || 'Server error' },
+      { status: 500 }
+    )
   }
 }
