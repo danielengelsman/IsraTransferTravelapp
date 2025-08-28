@@ -36,9 +36,19 @@ export default function NewTripPage() {
       description: description.trim() || null,
       status: 'draft' as TripStatus, // created_by is set by DB trigger
     }
-    const { data, error } = await sb.from('trips').insert(payload).select().single()
-    if (error) { alert(error.message); return }
-    router.push(`/trips/${data!.id}`)
+    const { data, error } = await sb
+  .from('trips')
+  .insert({
+    title: title.trim(),
+    location: location.trim() || null,
+    start_date: startDate || null,
+    end_date: endDate || null,
+    description: description.trim() || null,
+    status: 'draft',
+    created_by: me?.id,           // ✅ ensure ownership on insert
+  })
+  .select()
+  .single()
   }
 
   if (ok === 'need-login') {
