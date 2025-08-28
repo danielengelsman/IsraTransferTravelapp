@@ -3,7 +3,7 @@ import { cookies } from 'next/headers'
 import { createServerClient } from '@supabase/ssr'
 
 export async function createServerSupabase() {
-  // Next 15: cookies() is async (Promise<ReadonlyRequestCookies>)
+  // Next 15 returns a Promise here in many server contexts
   const store = await cookies()
 
   return createServerClient(
