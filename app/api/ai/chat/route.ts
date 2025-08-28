@@ -1,74 +1,100 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createServerSupabase } from '@/lib/supabase/server'
-import { createClient as createSbClient } from '@supabase/supabase-js'
+import { createClient } from '@supabase/supabase-js'
+
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
+const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+const OPENAI_KEY = process.env.OPENAI_API_KEY!
+
+function sbFromBearer(token?: string) {
+  return createClient(SUPABASE_URL, SUPABASE_KEY, {
+    global: { headers: token ? { Authorization: `Bearer ${token}` } : {} },
+  })
+}
 
 export const runtime = 'nodejs'
 
 export async function POST(req: NextRequest) {
   try {
-    // Try to read a Bearer token (client now sends it)
+    // Accept Authorization: Bearer <jwt> from client
     const authHeader = req.headers.get('authorization') || ''
     const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : undefined
-
-    // Prefer Bearer; otherwise fall back to cookie-based server client
-    const sb = token
-      ? createSbClient(
-          process.env.NEXT_PUBLIC_SUPABASE_URL!,
-          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-          { global: { headers: { Authorization: `Bearer ${token}` } } }
-        )
-      : await createServerSupabase()
+    const sb = sbFromBearer(token)
 
     const { data: { user } } = await sb.auth.getUser()
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    // Read form data
     const form = await req.formData()
     const prompt = (form.get('prompt') as string) || ''
     const tripId = (form.get('trip_id') as string) || null
-    const _files = form.getAll('files') as File[] // available if you want to parse them
+    // (files are available if you later want to parse them)
+    // const files = form.getAll('files') as File[]
 
-    // Call OpenAI (simple reply)
-    const openaiKey = process.env.OPENAI_API_KEY
-    let reply = ''
-    let proposals: any[] = []
+    // Ask the model for STRICT JSON proposals
+    const system = `You are Trip AI inside our travel app.
+Return ONLY JSON (no markdown) shaped like:
+{
+  "reply": string,
+  "proposals": [
+    { "kind": "trip"|"flight"|"accommodation"|"transport"|"itinerary_event"|"note",
+      "summary": string,
+      "payload": { ... domain fields ... }
+    }
+  ]
+}
+Rules:
+- Use ISO dates (YYYY-MM-DD).
+- If user did NOT select a trip, include a 'trip' proposal (title, start_date, end_date, notes).
+- Keep "summary" short and human-friendly.
+- 1–3 proposals max per request.
+- No extra keys. JSON only.`
 
-    if (openaiKey) {
-      const r = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${openaiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: 'gpt-4o-mini',
-          temperature: 0.2,
-          messages: [
-            {
-              role: 'system',
-              content:
-                'You are Trip AI for a travel planner app. Be concise. When possible, output structured bullet points for flights, accommodation, transport, and itinerary.',
-            },
-            {
-              role: 'user',
-              content: prompt || 'Create suggestions based on the attached receipts/itineraries.',
-            },
-          ],
-        }),
-      })
-      if (!r.ok) {
-        const txt = await r.text()
-        return NextResponse.json({ error: `OpenAI error: ${txt}` }, { status: 500 })
-      }
-      const j = await r.json()
-      reply = j?.choices?.[0]?.message?.content ?? ''
-    } else {
-      reply = 'Set OPENAI_API_KEY to enable AI replies.'
+    const body = {
+      model: 'gpt-4o-mini',
+      temperature: 0.2,
+      response_format: { type: 'json_object' as const },
+      messages: [
+        { role: 'system', content: system },
+        { role: 'user', content: prompt || 'Create structured proposals for this trip.' },
+      ],
     }
 
-    return NextResponse.json({ reply, proposals, trip_id: tripId })
+    const r = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${OPENAI_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    if (!r.ok) {
+      const txt = await r.text()
+      return NextResponse.json({ error: `OpenAI error: ${txt}` }, { status: 500 })
+    }
+
+    const j = await r.json()
+    let modelOut: any
+    try {
+      modelOut = JSON.parse(j?.choices?.[0]?.message?.content ?? '{}')
+    } catch {
+      modelOut = { reply: j?.choices?.[0]?.message?.content ?? '', proposals: [] }
+    }
+
+    const reply: string = modelOut.reply ?? ''
+    const generated: any[] = Array.isArray(modelOut.proposals) ? modelOut.proposals : []
+
+    // Save proposals so Apply/Reject can act on them
+    const rows = generated.map((p) => ({
+      trip_id: tripId,
+      kind: p.kind,
+      summary: p.summary,
+      payload: p.payload,
+      status: 'new',
+    }))
+
+    let inserted: any[] = []
+    if (rows.length) {
+      const { data, error } = await sb.from('ai_proposals').insert(rows).select('*')
+      if (!error) inserted = data || []
+    }
+
+    return NextResponse.json({ reply, proposals: inserted })
   } catch (err: any) {
     return NextResponse.json({ error: err?.message || 'Server error' }, { status: 500 })
   }
