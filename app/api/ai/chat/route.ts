@@ -1,3 +1,4 @@
+// app/api/ai/chat/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabase } from '@/lib/supabase/server'
 
@@ -5,61 +6,55 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 export async function POST(req: NextRequest) {
-  const sb = createServerSupabase()
-
-  const { data: { user } } = await sb.auth.getUser()
-  if (!user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  const { message, tripId } = await req.json().catch(() => ({} as any))
-  if (!message) return NextResponse.json({ error: 'No message' }, { status: 400 })
-
-  // Build short trip context if a trip is provided
-  let context = ''
-  if (tripId) {
-    const { data: trip } = await sb.from('trips').select('*').eq('id', tripId).single()
-    if (trip) {
-      const [fl, ac, tr] = await Promise.all([
-        sb.from('flights').select('*').eq('trip_id', tripId),
-        sb.from('accommodations').select('*').eq('trip_id', tripId),
-        sb.from('transports').select('*').eq('trip_id', tripId),
-      ])
-      context =
-        `Trip Title: ${trip.title ?? ''}\n` +
-        `When: ${trip.start_date ?? '—'} → ${trip.end_date ?? '—'}\n` +
-        `Where: ${trip.location ?? '—'}\n` +
-        `Desc: ${trip.description ?? '—'}\n` +
-        `Counts: flights=${fl.data?.length ?? 0}, hotels=${ac.data?.length ?? 0}, transport=${tr.data?.length ?? 0}`
+  try {
+    // 1) Require login (uses cookies via createServerSupabase)
+    const sb = createServerSupabase()
+    const { data: { user } } = await sb.auth.getUser()
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+
+    // 2) Read input (works with JSON or multipart form)
+    let prompt = ''
+    const ct = req.headers.get('content-type') || ''
+    if (ct.includes('multipart/form-data')) {
+      const fd = await req.formData()
+      prompt = String(fd.get('prompt') ?? '')
+      // Note: fd.getAll('files') available if you later need to read uploads
+    } else if (ct.includes('application/json')) {
+      const body = await req.json().catch(() => ({} as any))
+      prompt = String(body?.prompt ?? '')
+    }
+
+    // 3) Call OpenAI (ensure OPENAI_API_KEY is set in Netlify)
+    const sys =
+      'You are a helpful Trip Assistant. Return concise, bullet-point suggestions for flights, accommodation, transport, and itinerary.'
+    const r = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        messages: [
+          { role: 'system', content: sys },
+          { role: 'user', content: prompt || 'Draft travel suggestions.' },
+        ],
+        temperature: 0.2,
+      }),
+    })
+
+    if (!r.ok) {
+      const txt = await r.text()
+      return NextResponse.json({ error: `OpenAI error: ${txt}` }, { status: 500 })
+    }
+
+    const j = (await r.json()) as any
+    const reply = j?.choices?.[0]?.message?.content ?? 'No reply.'
+    // You can also return proposals: [] here if you generate them
+    return NextResponse.json({ reply, proposals: [] })
+  } catch (err: any) {
+    return NextResponse.json({ error: err?.message || 'Server error' }, { status: 500 })
   }
-
-  // If no OpenAI key, degrade gracefully
-  if (!process.env.OPENAI_API_KEY) {
-    return NextResponse.json({ reply: `AI key missing. Echo: ${message}` })
-  }
-
-  // Call OpenAI
-  const body = {
-    model: 'gpt-4o-mini',
-    temperature: 0.2,
-    messages: [
-      { role: 'system', content: 'You are a concise, helpful assistant for a business trip manager app. Produce concrete, actionable responses.' },
-      ...(context ? [{ role: 'system', content: `Trip context:\n${context}` } as const] : []),
-      { role: 'user', content: message }
-    ]
-  }
-
-  const r = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.OPENAI_API_KEY}` },
-    body: JSON.stringify(body)
-  })
-
-  if (!r.ok) {
-    const t = await r.text()
-    return NextResponse.json({ error: `OpenAI error: ${t}` }, { status: 500 })
-  }
-
-  const j = await r.json()
-  const reply = j?.choices?.[0]?.message?.content ?? 'No reply.'
-  return NextResponse.json({ reply })
 }
