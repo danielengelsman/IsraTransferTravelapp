@@ -1,123 +1,81 @@
 'use client'
-export const dynamic = 'force-dynamic'
 
-import { useMemo, useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 
+type TripLite = { id: string; title: string | null }
+type Proposal = {
+  id: string
+  kind: string
+  summary?: string | null
+  status?: 'new' | 'applied' | 'rejected' | null
+}
+
 export default function TripAIPage() {
   const sb = useMemo(() => createClient(), [])
   const router = useRouter()
-  const [auth, setAuth] = useState<'checking'|'need'|'ready'>('checking')
 
+  const [auth, setAuth] = useState<'checking' | 'need-login' | 'ready'>('checking')
+  const [trips, setTrips] = useState<TripLite[]>([])
+  const [tripId, setTripId] = useState('')
+  const [prompt, setPrompt] = useState('')
+  const [files, setFiles] = useState<File[]>([])
+  const [sending, setSending] = useState(false)
+  const [error, setError] = useState('')
+  const [reply, setReply] = useState('')
+  const [proposals, setProposals] = useState<Proposal[]>([])
+
+  // -------- Auth + initial data
   useEffect(() => {
     let cancel = false
     ;(async () => {
       const { data: { user } } = await sb.auth.getUser()
       if (cancel) return
-      setAuth(user ? 'ready' : 'need')
+      if (!user) { setAuth('need-login'); return }
+      setAuth('ready')
+
+      // Load trips (RLS will scope results)
+      const { data } = await sb
+        .from('trips')
+        .select('id,title')
+        .order('start_date', { ascending: false })
+      if (!cancel) setTrips((data as TripLite[]) || [])
     })()
     return () => { cancel = true }
   }, [sb])
 
-  if (auth === 'need') {
-    return (
-      <div className="card" style={{maxWidth:520}}>
-        <h2>Login required</h2>
-        <p>You need to log in to use Trip AI.</p>
-        <Link className="btn" href="/login?next=/ai">Go to Login</Link>
-      </div>
-    )
-  }
-type Trip = { id: string; title: string | null; created_by?: string | null }
-type Proposal = {
-  id: string
-  kind: 'flight' | 'accommodation' | 'transport' | 'itinerary_event' | string
-  summary?: string
-  status?: 'new' | 'applied' | 'rejected'
-  // allow extra fields from the API without typing them all
-  [key: string]: any
-}
-
-function PageBody() {
-  const sb = useMemo(() => createClient(), [])
-  const me = useMe()
-
-  // gate
-  const [authState, setAuthState] = useState<'checking' | 'need-login' | 'ready'>('checking')
-  useEffect(() => {
-    ;(async () => {
-      const { data: { user } } = await sb.auth.getUser()
-      setAuthState(user ? 'ready' : 'need-login')
-    })()
-  }, [sb])
-
-  // trips for selector
-  const [trips, setTrips] = useState<Trip[]>([])
-  const [tripId, setTripId] = useState<string>('')
-
-  useEffect(() => {
-    if (!me) return
-    ;(async () => {
-      const base = sb.from('trips').select('id,title,created_by').order('start_date', { ascending: true })
-      const q = (me.role === 'admin' || me.role === 'finance') ? base : base.eq('created_by', me.id)
-      const { data } = await q
-      const rows = (data as Trip[]) || []
-      setTrips(rows)
-      if (rows.length && !tripId) setTripId(rows[0].id)
-    })()
-  }, [me, sb]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  // chat state
-  const [prompt, setPrompt] = useState('')
-  const [files, setFiles] = useState<File[]>([])
-  const [sending, setSending] = useState(false)
-  const [reply, setReply] = useState<string>('')
-  const [proposals, setProposals] = useState<Proposal[]>([])
-  const [error, setError] = useState<string>('')
-
-  function onPickFiles(e: React.ChangeEvent<HTMLInputElement>) {
-    const f = Array.from(e.target.files || [])
-    if (!f.length) return
-    setFiles(prev => prev.concat(f))
-    e.currentTarget.value = ''
+  // -------- Handlers
+  const onPickFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const list = Array.from(e.target.files || [])
+    setFiles(list)
   }
 
-  async function sendToAI(message: string) {
-  const res = await fetch('/api/ai/chat', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',               // <— important
-    body: JSON.stringify({ message }),
-  })
-
-  if (res.status === 401) {
-    // Still not signed in on the server
-    alert('Please log in to use Trip AI.')
-    router.push('/login?next=/ai')
-    return
-  }
-
-  const data = await res.json()
-  // ...handle response
-}
-    }
+  const sendToAI = async () => {
+    setError('')
+    setReply('')
+    setProposals([])
     setSending(true)
     try {
       const fd = new FormData()
-      fd.append('prompt', prompt.trim())
+      if (prompt.trim()) fd.append('prompt', prompt.trim())
       if (tripId) fd.append('trip_id', tripId)
       files.forEach(f => fd.append('files', f, f.name))
 
-      const res = await fetch('/api/ai/chat', { method: 'POST', body: fd })
+      const res = await fetch('/api/ai/chat', {
+        method: 'POST',
+        body: fd,
+        credentials: 'include', // ensure auth cookie is sent
+      })
       const j = await res.json().catch(() => ({} as any))
       if (!res.ok) {
+        if (res.status === 401) router.push('/login?next=/ai')
         setError(j?.error || 'AI request failed')
-      } else {
-        if (j.reply) setReply(String(j.reply))
-        if (Array.isArray(j.proposals)) setProposals(j.proposals as Proposal[])
+        return
       }
+      setReply(j?.reply || '')
+      setProposals(Array.isArray(j?.proposals) ? j.proposals : [])
     } catch (e: any) {
       setError(e?.message || 'Network error')
     } finally {
@@ -125,23 +83,27 @@ function PageBody() {
     }
   }
 
-  async function actOnProposal(id: string, action: 'apply' | 'reject') {
+  const actOnProposal = async (id: string, action: 'apply' | 'reject') => {
     try {
-      const res = await fetch(`/api/ai/proposals/${id}/${action}`, { method: 'POST' })
-      const j = await res.json().catch(() => ({}))
+      const res = await fetch(`/api/ai/proposals/${id}/${action}`, {
+        method: 'POST',
+        credentials: 'include',
+      })
       if (!res.ok) {
-        alert(j?.error || `Could not ${action} proposal`)
+        const j = await res.json().catch(() => ({}))
+        alert(j?.error || `Failed to ${action}`)
         return
       }
       setProposals(prev =>
-        prev.map(p => (p.id === id ? { ...p, status: action === 'apply' ? 'applied' : 'rejected' } : p))
+        prev.map(p => (p.id === id ? { ...p, status: action === 'apply' ? 'applied' : 'rejected' } : p)),
       )
     } catch {
       alert('Network error')
     }
   }
 
-  if (authState === 'need-login') {
+  // -------- Guards
+  if (auth === 'need-login') {
     return (
       <div className="card" style={{ maxWidth: 520 }}>
         <h2>Login required</h2>
@@ -151,11 +113,14 @@ function PageBody() {
     )
   }
 
+  // -------- UI
   return (
     <div className="space-y-6">
       <div className="trip-cover" style={{ padding: 16, borderRadius: 16 }}>
         <h1 style={{ margin: 0, fontSize: 28, fontWeight: 800 }}>Trip AI Assistant</h1>
-        <div className="row-sub">Attach receipts/itineraries or describe the trip. The AI will draft flights, accommodation, transport and itinerary events.</div>
+        <div className="row-sub">
+          Attach receipts/itineraries or describe the trip. The AI will draft flights, accommodation, transport and events.
+        </div>
       </div>
 
       {/* Composer */}
@@ -176,7 +141,7 @@ function PageBody() {
             <textarea
               className="input"
               rows={4}
-              placeholder="Example: 'Create a 3-day trip to NYC for a conference. Hotel near Javits Center. Flights from TLV around Oct 10–13.'"
+              placeholder="Example: “Create a 3-day NYC trip; hotel near Javits Center; flights from TLV around Oct 10–13.”"
               value={prompt}
               onChange={e => setPrompt(e.target.value)}
             />
@@ -190,8 +155,12 @@ function PageBody() {
               <div style={{ marginTop: 8, maxHeight: 160, overflow: 'auto' }}>
                 {files.map((f, i) => (
                   <div key={i} className="row" style={{ padding: 6 }}>
-                    <div className="row-left"><div className="row-title" style={{ fontWeight: 600 }}>{f.name}</div></div>
-                    <button className="btn" onClick={() => setFiles(prev => prev.filter((_, idx) => idx !== i))}>Remove</button>
+                    <div className="row-left">
+                      <div className="row-title" style={{ fontWeight: 600 }}>{f.name}</div>
+                    </div>
+                    <button className="btn" onClick={() => setFiles(prev => prev.filter((_, idx) => idx !== i))}>
+                      Remove
+                    </button>
                   </div>
                 ))}
               </div>
@@ -211,7 +180,7 @@ function PageBody() {
         {!!error && <div style={{ marginTop: 10, color: '#b91c1c' }}>{error}</div>}
       </div>
 
-      {/* Assistant reply */}
+      {/* Assistant reply + proposals */}
       {(reply || proposals.length > 0) && (
         <div className="trip-grid">
           <div className="stack">
@@ -223,7 +192,6 @@ function PageBody() {
             )}
           </div>
 
-          {/* Proposals column */}
           <div className="stack">
             <section className="section">
               <div className="section-head"><h2 className="section-title">Proposals</h2></div>
@@ -235,8 +203,8 @@ function PageBody() {
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', gap: 8 }}>
                       <div>
                         <div className="row-title" style={{ textTransform: 'capitalize' }}>
-  {String(p.kind ?? '').replace(/_/g, ' ')}
-</div>
+                          {String(p.kind ?? '').split('_').join(' ')}
+                        </div>
                         {p.summary && <div className="row-sub">{p.summary}</div>}
                       </div>
                       <span className="badge">{p.status || 'new'}</span>
@@ -253,13 +221,5 @@ function PageBody() {
         </div>
       )}
     </div>
-  )
-}
-
-export default function AiPage() {
-  return (
-    <Suspense fallback={<div className="card">Loading assistant…</div>}>
-      <PageBody />
-    </Suspense>
   )
 }
