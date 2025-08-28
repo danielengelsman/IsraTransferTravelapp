@@ -63,7 +63,7 @@ export default function Sidebar() {
       <NavItem href="/trips/new" label="New Trip" icon={<IcPlus />} />
       <NavItem href="/trips" label="All Trips" icon={<IcCalendar />} />
       <NavItem href="/reports" label="Reports" icon={<IcDoc />} />
-<NavItem href="/ai" label="Trip AI" />
+<NavItem href="/ai" label="Trip AI" icon={<IcDoc />} />
 
       <Link href="/logout" className="sidebar-logout">Log out</Link>
     </aside>
