@@ -3,21 +3,18 @@ import { createServerSupabase } from '@/lib/supabase/server'
 
 export const dynamic = 'force-dynamic'
 
-export async function POST(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-) {
-  const sb = createServerSupabase(req)
+// NOTE: the second arg MUST NOT be typed to a specific shape.
+// Use `any` and then extract params.
+export async function POST(req: NextRequest, ctx: any) {
+  const { id } = (ctx?.params ?? {}) as { id: string }
 
-  // auth
+  const sb = createServerSupabase(req)
   const { data: { user }, error: authErr } = await sb.auth.getUser()
   if (authErr || !user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const id = params.id
-
-  // Load proposal (optional but useful to validate)
+  // (optional) validate it exists
   const { data: proposal, error: pErr } = await sb
     .from('ai_proposals')
     .select('*')
@@ -28,8 +25,7 @@ export async function POST(
     return NextResponse.json({ error: 'Not found' }, { status: 404 })
   }
 
-  // TODO: materialize into your trips tables based on proposal.kind/payload
-  // For now, mark as applied
+  // TODO: materialize into trips tables according to `proposal.kind/payload`
   const { error: upErr } = await sb
     .from('ai_proposals')
     .update({ status: 'applied' })
