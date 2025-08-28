@@ -1,11 +1,35 @@
 'use client'
 export const dynamic = 'force-dynamic'
 
-import { useEffect, useMemo, useState, Suspense } from 'react'
+import { useMemo, useEffect, useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { useMe } from '@/lib/useMe'
 
+export default function TripAIPage() {
+  const sb = useMemo(() => createClient(), [])
+  const router = useRouter()
+  const [auth, setAuth] = useState<'checking'|'need'|'ready'>('checking')
+
+  useEffect(() => {
+    let cancel = false
+    ;(async () => {
+      const { data: { user } } = await sb.auth.getUser()
+      if (cancel) return
+      setAuth(user ? 'ready' : 'need')
+    })()
+    return () => { cancel = true }
+  }, [sb])
+
+  if (auth === 'need') {
+    return (
+      <div className="card" style={{maxWidth:520}}>
+        <h2>Login required</h2>
+        <p>You need to log in to use Trip AI.</p>
+        <Link className="btn" href="/login?next=/ai">Go to Login</Link>
+      </div>
+    )
+  }
 type Trip = { id: string; title: string | null; created_by?: string | null }
 type Proposal = {
   id: string
