@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server'
 import { createServerSupabase } from '@/lib/supabase/server'
 
-export async function POST(_req: Request, context: any) {
-  const { id } = (context?.params || {}) as { id: string }
-  const sb = await createServerSupabase()
+export async function POST(_req: Request, context: { params: { id: string } }) {
+  const { id } = context.params
+  const sb = await createServerSupabase() 
 
   const { error } = await sb.from('ai_proposals').update({ status: 'rejected' }).eq('id', id)
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
