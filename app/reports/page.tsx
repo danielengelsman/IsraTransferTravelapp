@@ -30,7 +30,9 @@ export default function ReportsPage() {
     <div style={{ display: 'grid', gridTemplateColumns: '260px 1fr', gap: 16 }}>
       {/* Optional: <Sidebar /> */}
       <div />
-      <div className="space-y-6">
+      <div style={{ display: 'grid', gridTemplateColumns: '260px 1fr', gap: 16, alignItems: 'start' }}>
+  <Sidebar />
+  <main className="space-y-6">
         <div className="trip-cover" style={{ padding: 16, borderRadius: 16 }}>
           <h1 style={{ margin: 0, fontSize: 28, fontWeight: 800 }}>Reports</h1>
           <div className="row-sub">Quick overview of trip statuses.</div>
@@ -68,6 +70,7 @@ function StatCard({ label, value }: { label:string; value:number }) {
     <div className="card" style={{ padding: 14 }}>
       <div className="row-sub" style={{ marginBottom: 6 }}>{label}</div>
       <div style={{ fontSize: 28, fontWeight: 800 }}>{value}</div>
-    </div>
+     </main>
+</div>
   )
 }
