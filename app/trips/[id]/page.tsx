@@ -258,6 +258,7 @@ export default function TripDetailPage() {
           </div>
         </div>
         <Link className="btn" href="/trips">Back to Trips</Link>
+        <Link className="btn" href={`/ai?trip=${id}`}>Ask Trip AI</Link>
       </div>
     </div>
   )
