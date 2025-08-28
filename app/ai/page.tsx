@@ -1,19 +1,30 @@
-import Sidebar from '@/components/Sidebar'
-import AIChat from '@/components/AIChat'
+'use client'
+export const dynamic = 'force-dynamic'
 
-export default function AIPage() {
+import { Suspense } from 'react'
+import { useSearchParams } from 'next/navigation'
+
+function AiPageBody() {
+  // ✅ It's safe to call this here because we’re inside Suspense
+  const search = useSearchParams()
+  const tripId = search.get('tripId') // if you use a query param
+
+  // 👉 Put your existing AI UI here (form, messages, etc.)
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '260px 1fr', minHeight: '100dvh' }}>
-      <aside style={{ borderRight: '1px solid #e5e7eb' }}>
-        <Sidebar />
-      </aside>
-      <main style={{ padding: 16, display: 'grid', gap: 16, maxWidth: 1200, margin: '0 auto', width: '100%' }}>
-        <div className="trip-cover" style={{ borderRadius: 16, padding: 16 }}>
-          <h1 style={{ margin: 0, fontSize: 28, fontWeight: 800 }}>Trip AI</h1>
-          <div style={{ opacity: .9 }}>Chat with the assistant. Open from a trip to include its context.</div>
-        </div>
-        <AIChat />
+    <div className="two-col">
+      <aside className="sidebar">{/* optional */}</aside>
+      <main className="content">
+        <h1>Trip AI Assistant</h1>
+        {/* your current JSX for the assistant */}
       </main>
     </div>
+  )
+}
+
+export default function AiPage() {
+  return (
+    <Suspense fallback={<div className="card">Loading assistant…</div>}>
+      <AiPageBody />
+    </Suspense>
   )
 }
