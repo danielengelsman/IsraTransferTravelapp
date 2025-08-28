@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
 export const runtime = 'nodejs'
 
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+// IMPORTANT: use Request + { params } here (not NextRequest)
+export async function POST(req: Request, { params }: { params: { id: string } }) {
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -20,10 +21,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
   const payload = { ...(proposal.payload || {}), created_by: user.id }
 
-  let result:
-    | { error: { message: string } | null; data?: any }
-    | any = { error: null }
-
+  let result: any
   switch (String(proposal.kind)) {
     case 'note':
       result = await supabase.from('notes').insert(payload).select('*').single()
