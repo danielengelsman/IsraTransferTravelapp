@@ -7,13 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 export const dynamic = 'force-dynamic'
 
 type ProposalStatus = 'new' | 'applied' | 'rejected'
-type ProposalKind =
-  | 'flight'
-  | 'accommodation'
-  | 'transport'
-  | 'itinerary_event'
-  | 'note'
-  | 'other'
+type ProposalKind = 'flight' | 'accommodation' | 'transport' | 'itinerary_event' | 'note' | 'other'
 
 type Proposal = {
   id: string
@@ -53,28 +47,20 @@ export default function TripAIPage() {
         if (!cancelled) setAuth('need-login')
         return
       }
-      // load minimal trips for selector
-      const { data: t } = await sb
-        .from('trips')
-        .select('id,title')
-        .order('start_date', { ascending: false })
-        .limit(100)
-
+      const { data: t } = await sb.from('trips').select('id,title').order('start_date', { ascending: false }).limit(100)
       if (!cancelled) {
         setTrips((t as TripLite[]) || [])
         setAuth('ready')
       }
     })()
-    return () => {
-      cancelled = true
-    }
+    return () => { cancelled = true }
   }, [sb])
 
-  // ----- File picker -----
-  function onPickFiles(e: any) {
-    const selected = Array.from(e.target.files || [])
-    if (!selected.length) return
-    setFiles(prev => [...prev, ...selected])
+  // ----- File picker (typed to avoid TS error) -----
+  function onPickFiles(e: React.ChangeEvent<HTMLInputElement>) {
+    const selected: File[] = Array.from(e.target.files ?? [])
+    if (selected.length === 0) return
+    setFiles((prev: File[]) => [...prev, ...selected])
   }
 
   // ----- Send to AI (includes Bearer token) -----
@@ -82,12 +68,10 @@ export default function TripAIPage() {
     setError('')
     setReply('')
     setProposals([])
-
     if (!prompt && files.length === 0) {
       setError('Please enter a prompt or attach files.')
       return
     }
-
     setSending(true)
     try {
       const fd = new FormData()
@@ -95,16 +79,14 @@ export default function TripAIPage() {
       if (tripId) fd.append('trip_id', tripId)
       files.forEach(f => fd.append('files', f, f.name))
 
-      // get session token and send it
       const { data: { session } } = await sb.auth.getSession()
       const token = session?.access_token
 
       const res = await fetch('/api/ai/chat', {
         method: 'POST',
+        headers: token ? { authorization: `Bearer ${token}` } : {},
         body: fd,
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
       })
-
       const j = await res.json().catch(() => ({} as any))
       if (!res.ok) {
         setError(j?.error || 'AI request failed')
@@ -119,28 +101,23 @@ export default function TripAIPage() {
     }
   }
 
-  // ----- Apply/Reject with Supabase session token -----
+  // ----- Apply / Reject (Bearer token) -----
   async function actOnProposal(id: string, action: 'apply' | 'reject') {
     const { data: { session } } = await sb.auth.getSession()
     const token = session?.access_token
-
     const res = await fetch(`/api/ai/proposals/${id}/${action}`, {
       method: 'POST',
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      headers: token ? { authorization: `Bearer ${token}` } : {},
     })
-
     const j = await res.json().catch(() => ({} as any))
     if (!res.ok) {
       alert(j?.error || `${action} failed`)
       return
     }
-
-    // optimistic UI
-    setProposals(prev =>
-      prev.map(p =>
-        p.id === id ? { ...p, status: action === 'apply' ? 'applied' : 'rejected' } : p
-      )
-    )
+    setProposals(prev => prev.map(p => p.id === id
+      ? { ...p, status: action === 'apply' ? 'applied' : 'rejected' }
+      : p
+    ))
   }
 
   // ----- Auth screens -----
@@ -152,9 +129,7 @@ export default function TripAIPage() {
       <div className="card" style={{ maxWidth: 520 }}>
         <h2>Login required</h2>
         <p>You need to log in to use the Trip AI Assistant.</p>
-        <Link className="btn" href="/login?next=/ai">
-          Go to Login
-        </Link>
+        <Link className="btn" href="/login?next=/ai">Go to Login</Link>
       </div>
     )
   }
@@ -165,8 +140,7 @@ export default function TripAIPage() {
       <div className="trip-cover" style={{ padding: 16, borderRadius: 16 }}>
         <h1 style={{ margin: 0, fontSize: 28, fontWeight: 800 }}>Trip AI Assistant</h1>
         <div className="row-sub">
-          Attach receipts/itineraries or describe the trip. The AI will draft flights,
-          accommodation, transport and itinerary events.
+          Attach receipts/itineraries or describe the trip. The AI will draft flights, accommodation, transport and itinerary events.
         </div>
       </div>
 
@@ -178,9 +152,7 @@ export default function TripAIPage() {
             <select className="input" value={tripId} onChange={e => setTripId(e.target.value)}>
               <option value="">— create suggestions without attaching to a trip —</option>
               {trips.map(t => (
-                <option key={t.id} value={t.id}>
-                  {t.title || t.id}
-                </option>
+                <option key={t.id} value={t.id}>{t.title || t.id}</option>
               ))}
             </select>
           </label>
@@ -214,9 +186,7 @@ export default function TripAIPage() {
                     </div>
                     <button
                       className="btn"
-                      onClick={() =>
-                        setFiles(prev => prev.filter((_, idx) => idx !== i))
-                      }
+                      onClick={() => setFiles(prev => prev.filter((_, idx) => idx !== i))}
                     >
                       Remove
                     </button>
@@ -231,16 +201,7 @@ export default function TripAIPage() {
           <button className="btn-primary" disabled={sending} onClick={sendToAI}>
             {sending ? 'Sending…' : 'Send to AI'}
           </button>
-          <button
-            className="btn"
-            onClick={() => {
-              setPrompt('')
-              setFiles([])
-              setReply('')
-              setProposals([])
-              setError('')
-            }}
-          >
+          <button className="btn" onClick={() => { setPrompt(''); setFiles([]); setReply(''); setProposals([]); setError('') }}>
             Clear
           </button>
         </div>
@@ -267,54 +228,39 @@ export default function TripAIPage() {
           {/* Proposals */}
           <div className="stack">
             <section className="section">
-              <div className="section-head">
-                <h2 className="section-title">Proposals</h2>
-              </div>
+              <div className="section-head"><h2 className="section-title">Proposals</h2></div>
               <div className="section-card" style={{ display: 'grid', gap: 10 }}>
                 {proposals.length === 0 ? (
-                  <div className="row">
-                    <div className="row-left">
-                      <div className="row-title">No proposals returned.</div>
+                  <div className="row"><div className="row-left"><div className="row-title">No proposals returned.</div></div></div>
+                ) : proposals.map(p => (
+                  <div key={p.id} className="card" style={{ padding: 12 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', gap: 8 }}>
+                      <div>
+                        <div className="row-title" style={{ textTransform: 'capitalize' }}>
+                          {String(p.kind ?? '').replace(/_/g, ' ')}
+                        </div>
+                        {p.summary && <div className="row-sub">{p.summary}</div>}
+                      </div>
+                      <span className="badge">{p.status || 'new'}</span>
+                    </div>
+                    <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
+                      <button
+                        className="btn-primary"
+                        disabled={p.status === 'applied'}
+                        onClick={() => actOnProposal(p.id, 'apply')}
+                      >
+                        Apply
+                      </button>
+                      <button
+                        className="btn"
+                        disabled={p.status === 'rejected'}
+                        onClick={() => actOnProposal(p.id, 'reject')}
+                      >
+                        Reject
+                      </button>
                     </div>
                   </div>
-                ) : (
-                  proposals.map(p => (
-                    <div key={p.id} className="card" style={{ padding: 12 }}>
-                      <div
-                        style={{
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                          alignItems: 'start',
-                          gap: 8,
-                        }}
-                      >
-                        <div>
-                          <div className="row-title" style={{ textTransform: 'capitalize' }}>
-                            {String(p.kind ?? '').replace(/_/g, ' ')}
-                          </div>
-                          {p.summary && <div className="row-sub">{p.summary}</div>}
-                        </div>
-                        <span className="badge">{p.status || 'new'}</span>
-                      </div>
-                      <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
-                        <button
-                          className="btn-primary"
-                          disabled={p.status === 'applied'}
-                          onClick={() => actOnProposal(p.id, 'apply')}
-                        >
-                          Apply
-                        </button>
-                        <button
-                          className="btn"
-                          disabled={p.status === 'rejected'}
-                          onClick={() => actOnProposal(p.id, 'reject')}
-                        >
-                          Reject
-                        </button>
-                      </div>
-                    </div>
-                  ))
-                )}
+                ))}
               </div>
             </section>
           </div>
