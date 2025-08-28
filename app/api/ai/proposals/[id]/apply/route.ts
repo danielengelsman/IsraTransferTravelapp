@@ -1,8 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
-export const runtime = 'nodejs'
-
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const SUPABASE_ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
@@ -13,93 +11,102 @@ function sbFrom(req: Request) {
     global: { headers: jwt ? { Authorization: `Bearer ${jwt}` } : {} },
   })
 }
+function getIdFromUrl(url: string) {
+  const parts = new URL(url).pathname.split('/') // .../proposals/:id/apply
+  const i = parts.indexOf('proposals')
+  return i >= 0 ? parts[i + 1] : ''
+}
 
-export async function POST(req: Request, ctx: any) {
+export async function POST(req: Request) {
   const sb = sbFrom(req)
   const { data: { user } } = await sb.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const idParam = ctx?.params?.id
-  const id = Array.isArray(idParam) ? idParam[0] : idParam
+  const id = getIdFromUrl(req.url)
   if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 })
 
-  const { data: p, error: getErr } = await sb.from('ai_proposals').select('*').eq('id', id).single()
-  if (getErr || !p) return NextResponse.json({ error: getErr?.message || 'Not found' }, { status: 404 })
-  if (p.status === 'applied') return NextResponse.json({ ok: true })
+  const { data: p, error } = await sb.from('ai_proposals')
+    .select('id, trip_id, kind, summary, payload, status')
+    .eq('id', id)
+    .single()
+  if (error || !p) return NextResponse.json({ error: 'Proposal not found' }, { status: 404 })
+  if (p.status === 'applied') return NextResponse.json({ ok: true, already: true })
 
-  let err: string | null = null
   try {
-    switch (p.kind as string) {
+    let created: any = null
+    switch (p.kind) {
       case 'trip': {
-        const pl = p.payload || {}
-        const row: any = { title: pl.title ?? p.summary ?? 'New Trip' }
-        if (pl.start_date) row.start_date = pl.start_date
-        if (pl.end_date) row.end_date = pl.end_date
-        if (pl.notes) row.notes = pl.notes
-        const { error } = await sb.from('trips').insert(row)
-        if (error) err = error.message
+        const { data, error: e } = await sb.from('trips')
+          .insert({
+            title: p.payload?.title ?? p.summary ?? 'New Trip',
+            start_date: p.payload?.start_date ?? null,
+            end_date: p.payload?.end_date ?? null,
+            notes: p.payload?.notes ?? null,
+          }).select('id, title').single()
+        if (e) throw e
+        created = { table: 'trips', record: data }
         break
       }
       case 'accommodation': {
-        const pl = p.payload || {}
-        const { error } = await sb.from('accommodations').insert({
-          trip_id: p.trip_id,
-          name: pl.name,
-          address: pl.address,
-          check_in: pl.check_in,
-          check_out: pl.check_out,
-          notes: pl.notes,
-        })
-        if (error) err = error.message
+        const { data, error: e } = await sb.from('accommodations')
+          .insert({
+            trip_id: p.trip_id,
+            name: p.payload?.name ?? null,
+            address: p.payload?.address ?? null,
+            check_in: p.payload?.check_in ?? null,
+            check_out: p.payload?.check_out ?? null,
+            notes: p.payload?.notes ?? null,
+          }).select('id, trip_id, name').single()
+        if (e) throw e
+        created = { table: 'accommodations', record: data }
         break
       }
       case 'transport': {
-        const pl = p.payload || {}
-        const { error } = await sb.from('transports').insert({
-          trip_id: p.trip_id,
-          mode: pl.mode,
-          from_city: pl.from_city,
-          to_city: pl.to_city,
-          depart_at: pl.depart_at,
-          arrive_at: pl.arrive_at,
-          carrier: pl.carrier,
-          code: pl.code,
-          notes: pl.notes,
-        })
-        if (error) err = error.message
+        const { data, error: e } = await sb.from('transports')
+          .insert({
+            trip_id: p.trip_id,
+            mode: p.payload?.mode ?? null,
+            from_city: p.payload?.from_city ?? null,
+            to_city: p.payload?.to_city ?? null,
+            depart_at: p.payload?.depart_at ?? null,
+            arrive_at: p.payload?.arrive_at ?? null,
+            carrier: p.payload?.carrier ?? null,
+            code: p.payload?.code ?? null,
+            notes: p.payload?.notes ?? null,
+          }).select('id, trip_id, mode').single()
+        if (e) throw e
+        created = { table: 'transports', record: data }
         break
       }
       case 'itinerary_event': {
-        const pl = p.payload || {}
-        const { error } = await sb.from('itinerary_events').insert({
-          trip_id: p.trip_id,
-          title: pl.title ?? p.summary,
-          date: pl.date,
-          start_time: pl.start_time,
-          end_time: pl.end_time,
-          location: pl.location,
-          notes: pl.notes,
-        })
-        if (error) err = error.message
+        const { data, error: e } = await sb.from('itinerary_events')
+          .insert({
+            trip_id: p.trip_id,
+            title: p.payload?.title ?? p.summary ?? 'Event',
+            date: p.payload?.date ?? null,
+            start_time: p.payload?.start_time ?? null,
+            end_time: p.payload?.end_time ?? null,
+            location: p.payload?.location ?? null,
+            notes: p.payload?.notes ?? null,
+          }).select('id, trip_id, title').single()
+        if (e) throw e
+        created = { table: 'itinerary_events', record: data }
         break
       }
-      case 'note': {
-        const pl = p.payload || {}
-        const { error } = await sb.from('notes').insert({
-          trip_id: p.trip_id,
-          content: pl.content ?? p.summary,
-        })
-        if (error) err = error.message
-        break
+      default: { // note/other
+        const { data, error: e } = await sb.from('notes')
+          .insert({
+            trip_id: p.trip_id,
+            content: p.payload?.content ?? p.summary ?? '',
+          }).select('id, trip_id').single()
+        if (e) throw e
+        created = { table: 'notes', record: data }
       }
-      default:
-        err = 'Unknown kind'
     }
-  } catch (e: any) {
-    err = e?.message || 'Apply failed'
-  }
 
-  if (err) return NextResponse.json({ error: err }, { status: 400 })
-  await sb.from('ai_proposals').update({ status: 'applied' }).eq('id', id)
-  return NextResponse.json({ ok: true })
+    await sb.from('ai_proposals').update({ status: 'applied' }).eq('id', p.id)
+    return NextResponse.json({ ok: true, created })
+  } catch (e: any) {
+    return NextResponse.json({ error: e?.message || 'Apply failed' }, { status: 500 })
+  }
 }
