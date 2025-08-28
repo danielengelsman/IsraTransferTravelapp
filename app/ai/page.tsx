@@ -1,8 +1,7 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState, useEffect } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 
 type TripLite = { id: string; title: string | null }
@@ -16,6 +15,8 @@ type Proposal = {
 export default function TripAIPage() {
   const sb = useMemo(() => createClient(), [])
   const router = useRouter()
+  export default function AiPage() {
+  const sb = useMemo(() => createClient(), [])
 
   const [auth, setAuth] = useState<'checking' | 'need-login' | 'ready'>('checking')
   const [trips, setTrips] = useState<TripLite[]>([])
