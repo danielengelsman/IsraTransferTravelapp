@@ -68,43 +68,45 @@ export default function TripAIPage() {
   }
 
   // ----- Send to AI (includes Bearer token) -----
-  async function sendToAI() {
-    setError('')
-    setReply('')
-    setProposals([])
-    if (!prompt && files.length === 0) {
-      setError('Please enter a prompt or attach files.')
+  // ----- Send to AI (now sends Authorization so server can write proposals) -----
+async function sendToAI() {
+  setError('')
+  setReply('')
+  setProposals([])
+  if (!prompt && files.length === 0) {
+    setError('Please enter a prompt or attach files.')
+    return
+  }
+  setSending(true)
+  try {
+    const fd = new FormData()
+    if (prompt) fd.append('prompt', prompt)
+    if (tripId) fd.append('trip_id', tripId)
+    files.forEach(f => fd.append('files', f, f.name))
+
+    // <-- add token
+    const { data: { session } } = await sb.auth.getSession()
+    const token = session?.access_token
+
+    const res = await fetch('/api/ai/chat', {
+      method: 'POST',
+      headers: token ? { authorization: `Bearer ${token}` } : {},
+      body: fd,
+    })
+
+    const j = await res.json().catch(() => ({} as any))
+    if (!res.ok) {
+      setError(j?.error || 'AI request failed')
       return
     }
-    setSending(true)
-    try {
-      // get the Supabase session token
-      const { data: { session } } = await sb.auth.getSession()
-      const token = session?.access_token
-
-      const fd = new FormData()
-      if (prompt) fd.append('prompt', prompt)
-      if (tripId) fd.append('trip_id', tripId)
-      files.forEach(f => fd.append('files', f, f.name))
-
-      const headers: Record<string, string> = {}
-      if (token) headers.authorization = `Bearer ${token}`
-
-      const res = await fetch('/api/ai/chat', { method: 'POST', body: fd, headers })
-      const j = await res.json().catch(() => ({} as any))
-      if (!res.ok) {
-        setError(j?.error || 'AI request failed')
-        return
-      }
-      setReply(j?.reply || '')
-      setProposals(Array.isArray(j?.proposals) ? j.proposals : [])
-    } catch (e: any) {
-      setError(e?.message || 'Network error')
-    } finally {
-      setSending(false)
-    }
+    setReply(j?.reply || '')
+    setProposals(Array.isArray(j?.proposals) ? j.proposals : [])
+  } catch (e: any) {
+    setError(e?.message || 'Network error')
+  } finally {
+    setSending(false)
   }
-
+}
   // ----- Apply/Reject (already includes Bearer token) -----
   async function actOnProposal(id: string, action: 'apply' | 'reject') {
     const { data: { session } } = await sb.auth.getSession()
