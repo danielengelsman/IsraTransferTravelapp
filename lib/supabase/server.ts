@@ -1,10 +1,9 @@
-// lib/supabase/server.ts
 import { cookies } from 'next/headers'
 import { createServerClient } from '@supabase/ssr'
 
 export async function createServerSupabase() {
-  // Netlify/Next typings sometimes make cookies() appear async — await it.
-  const store = await (cookies() as any)
+  // Sometimes types mark cookies() oddly on Netlify; cast & await keeps TS happy.
+  const store = (await (cookies() as any)) as ReturnType<typeof cookies>
 
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
