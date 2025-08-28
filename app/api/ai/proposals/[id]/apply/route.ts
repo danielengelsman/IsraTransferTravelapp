@@ -1,6 +1,7 @@
-// app/api/ai/proposals/[id]/apply/route.ts
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+
+export const runtime = 'nodejs'
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const SUPABASE_ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -13,17 +14,12 @@ function sbFrom(req: Request) {
   })
 }
 
-export const runtime = 'nodejs'
-
-export async function POST(
-  req: Request,
-  ctx: { params: Record<string, string | string[]> } // ✅ Next 15-compatible
-) {
+export async function POST(req: Request, ctx: any) {
   const sb = sbFrom(req)
   const { data: { user } } = await sb.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const idParam = ctx.params?.id
+  const idParam = ctx?.params?.id
   const id = Array.isArray(idParam) ? idParam[0] : idParam
   if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 })
 
