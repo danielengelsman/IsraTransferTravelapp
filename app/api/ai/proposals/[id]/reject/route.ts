@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server'
 import { createServerSupabase } from '@/lib/supabase/server'
 
-export async function POST(_req: Request, { params }: { params: { id: string } }) {
-  const id = params.id
+export async function POST(_req: Request, context: any) {
+  const { id } = (context?.params || {}) as { id: string }
   const sb = createServerSupabase()
 
   const { error } = await sb
