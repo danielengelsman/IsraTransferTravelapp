@@ -2,10 +2,11 @@
 import { NextResponse } from 'next/server'
 import { createServerSupabase } from '@/lib/supabase/server'
 
-type Ctx = { params: { id: string } }
-
-export async function POST(_req: Request, context: Ctx) {
-  const { id } = context.params
+export async function POST(
+  _req: Request,
+  { params }: { params: { id: string } }   // NOTE: inline-typed & destructured
+) {
+  const { id } = params
   const sb = await createServerSupabase()
 
   const { data: { user } } = await sb.auth.getUser()
