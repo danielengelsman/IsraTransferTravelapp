@@ -1,122 +1,27 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import Link from 'next/link'
-import { createClient } from '@supabase/supabase-js'
+import { createClient } from '@/lib/supabase/client'
 
-type ProposalStatus = 'new' | 'applied' | 'rejected'
-type ProposalKind = 'flight' | 'accommodation' | 'transport' | 'itinerary_event' | 'note' | 'other'
-type Proposal = {
-  id: string
-  trip_id: string | null
-  kind: ProposalKind
-  summary?: string | null
-  payload?: any
-  status?: ProposalStatus
-}
-type TripLite = { id: string; title: string | null }
-
-export default function TripAIPage() {
-  const sb = useMemo(
-    () => createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!),
-    []
-  )
-
-  const [auth, setAuth] = useState<'checking' | 'need-login' | 'ready'>('checking')
-  const [trips, setTrips] = useState<TripLite[]>([])
-  const [tripId, setTripId] = useState<string>('')
-
+export default function AiPage() {
+  const sb = useMemo(() => createClient(), [])
+  const [auth, setAuth] = useState<'checking'|'need'|'ready'>('checking')
   const [prompt, setPrompt] = useState('')
-  const [files, setFiles] = useState<File[]>([])
   const [sending, setSending] = useState(false)
-
   const [reply, setReply] = useState('')
-  const [proposals, setProposals] = useState<Proposal[]>([])
-  const [error, setError] = useState('')
+  const [tripId, setTripId] = useState<string | null>(null)
+  const [err, setErr] = useState('')
 
-  useEffect(() => {
-    let cancelled = false
-    ;(async () => {
-      const { data: { user } } = await sb.auth.getUser()
-      if (!user) {
-        if (!cancelled) setAuth('need-login')
-        return
-      }
-      const { data: t } = await sb.from('trips').select('id,title').order('created_at', { ascending: false }).limit(50)
-      if (!cancelled) {
-        setTrips((t as TripLite[]) || [])
-        setAuth('ready')
-      }
-    })()
-    return () => { cancelled = true }
+  // check auth once
+  useMemo(() => {
+    sb.auth.getUser().then(({ data: { user } }) => {
+      setAuth(user ? 'ready' : 'need')
+    })
   }, [sb])
 
-  function onPickFiles(e: React.ChangeEvent<HTMLInputElement>) {
-    const selected = Array.from(e.target.files || []) as File[]
-    if (!selected.length) return
-    setFiles(prev => [...prev, ...selected])
-  }
-
-  // ----- Send to AI (includes Bearer token) -----
-  async function sendToAI() {
-    setError(''); setReply(''); setProposals([])
-    if (!prompt && files.length === 0) {
-      setError('Please enter a prompt or attach files.')
-      return
-    }
-    setSending(true)
-    try {
-      const { data: { session } } = await sb.auth.getSession()
-      const token = session?.access_token
-
-      const fd = new FormData()
-      if (prompt) fd.append('prompt', prompt)
-      if (tripId) fd.append('trip_id', tripId)
-      files.forEach(f => fd.append('files', f, f.name))
-
-      const res = await fetch('/api/ai/chat', {
-        method: 'POST',
-        body: fd,
-        headers: token ? { authorization: `Bearer ${token}` } : {},
-      })
-      const j = await res.json().catch(() => ({} as any))
-      if (!res.ok) { setError(j?.error || 'AI request failed'); return }
-      setReply(j?.reply || '')
-      setProposals(Array.isArray(j?.proposals) ? j.proposals : [])
-    } catch (e: any) {
-      setError(e?.message || 'Network error')
-    } finally {
-      setSending(false)
-    }
-  }
-
-  // ----- Apply / Reject -----
-  async function actOnProposal(id: string, action: 'apply' | 'reject') {
-    if (action === 'reject') {
-      setProposals(prev => prev.map(p => p.id === id ? { ...p, status: 'rejected' } : p))
-      return
-    }
-    const p = proposals.find(x => x.id === id)
-    if (!p) return
-
-    const { data: { session } } = await sb.auth.getSession()
-    const token = session?.access_token
-
-    const res = await fetch(`/api/ai/proposals/${id}/apply`, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        ...(token ? { authorization: `Bearer ${token}` } : {}),
-      },
-      body: JSON.stringify({ proposal: p }),
-    })
-    const j = await res.json().catch(() => ({} as any))
-    if (!res.ok) { alert(j?.error || 'Apply failed'); return }
-    setProposals(prev => prev.map(pp => pp.id === id ? { ...pp, status: 'applied' } : pp))
-  }
-
   if (auth === 'checking') return <div className="card">Loading…</div>
-  if (auth === 'need-login') return (
+  if (auth === 'need') return (
     <div className="card" style={{ maxWidth: 520 }}>
       <h2>Login required</h2>
       <p>You need to log in to use the Trip AI Assistant.</p>
@@ -124,97 +29,60 @@ export default function TripAIPage() {
     </div>
   )
 
+  async function onSend() {
+    setErr(''); setReply(''); setTripId(null)
+    if (!prompt.trim()) { setErr('Please enter what to create.'); return }
+    setSending(true)
+    try {
+      const res = await fetch('/api/ai/make-trip', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ prompt }),
+      })
+      const j = await res.json()
+      if (!res.ok) { setErr(j?.error || 'Request failed'); return }
+      setReply(j.reply || 'Trip created.')
+      setTripId(j.trip_id || null)
+    } catch (e: any) {
+      setErr(e?.message || 'Network error')
+    } finally {
+      setSending(false)
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="trip-cover" style={{ padding: 16, borderRadius: 16 }}>
         <h1 style={{ margin: 0, fontSize: 28, fontWeight: 800 }}>Trip AI Assistant</h1>
-        <div className="row-sub">Create trips and add real items. Select a trip to get proposals you can Apply.</div>
+        <div className="row-sub">Describe the trip. I’ll create it in your account.</div>
       </div>
 
       <div className="section-card" style={{ padding: 16 }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 240px', gap: 12 }}>
-          <label className="block" style={{ gridColumn: '1 / -1' }}>
-            <span className="label">Select Trip (optional)</span>
-            <select className="input" value={tripId} onChange={e => setTripId(e.target.value)}>
-              <option value="">— create suggestions without attaching to a trip —</option>
-              {trips.map(t => <option key={t.id} value={t.id}>{t.title || t.id}</option>)}
-            </select>
-          </label>
-
-          <label className="block">
-            <span className="label">Tell the assistant what to do</span>
-            <textarea
-              className="input"
-              rows={4}
-              placeholder="Example: Create a new trip to Chicago on April 1. (or, with a trip selected: Add a hotel Apr 1–3 and an outbound flight)"
-              value={prompt}
-              onChange={e => setPrompt(e.target.value)}
-            />
-          </label>
-
-          <div className="block">
-            <span className="label">Attachments</span>
-            <input className="input" type="file" multiple onChange={onPickFiles}
-                   accept="image/*,.pdf,.eml,.msg,.txt,.doc,.docx,.xls,.xlsx" />
-            {!!files.length && (
-              <div style={{ marginTop: 8, maxHeight: 160, overflow: 'auto' }}>
-                {files.map((f, i) => (
-                  <div key={i} className="row" style={{ padding: 6 }}>
-                    <div className="row-left"><div className="row-title" style={{ fontWeight: 600 }}>{f.name}</div></div>
-                    <button className="btn" onClick={() => setFiles(prev => prev.filter((_, idx) => idx !== i))}>Remove</button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-
+        <label className="block">
+          <span className="label">Tell the assistant what to do</span>
+          <textarea className="input" rows={4}
+            placeholder={`Example: "Create a new trip to Chicago, Apr 1–4".`}
+            value={prompt} onChange={e => setPrompt(e.target.value)} />
+        </label>
         <div style={{ marginTop: 12, display: 'flex', gap: 8 }}>
-          <button className="btn-primary" disabled={sending} onClick={sendToAI}>
-            {sending ? 'Sending…' : 'Send to AI'}
+          <button className="btn-primary" disabled={sending} onClick={onSend}>
+            {sending ? 'Creating…' : 'Send to AI'}
           </button>
-          <button className="btn" onClick={() => { setPrompt(''); setFiles([]); setReply(''); setProposals([]); setError('') }}>
+          <button className="btn" onClick={() => { setPrompt(''); setReply(''); setErr(''); setTripId(null) }}>
             Clear
           </button>
         </div>
-
-        {!!error && <div style={{ marginTop: 10, color: '#b91c1c' }}>{error}</div>}
+        {!!err && <div style={{ marginTop: 10, color: '#b91c1c' }}>{err}</div>}
       </div>
 
-      {(reply || proposals.length > 0) && (
+      {(reply || tripId) && (
         <div className="trip-grid">
           <div className="stack">
-            {!!reply && (
-              <section className="section">
-                <div className="section-head"><h2 className="section-title">Assistant Reply</h2></div>
-                <div className="section-card"><pre style={{ whiteSpace: 'pre-wrap' }}>{reply}</pre></div>
-              </section>
-            )}
-          </div>
-
-          <div className="stack">
             <section className="section">
-              <div className="section-head"><h2 className="section-title">Proposals</h2></div>
-              <div className="section-card" style={{ display: 'grid', gap: 10 }}>
-                {proposals.length === 0 ? (
-                  <div className="row"><div className="row-left"><div className="row-title">No proposals returned.</div></div></div>
-                ) : proposals.map(p => (
-                  <div key={p.id} className="card" style={{ padding: 12 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', gap: 8 }}>
-                      <div>
-                        <div className="row-title" style={{ textTransform: 'capitalize' }}>
-                          {String(p.kind ?? '').replace(/_/g, ' ')}
-                        </div>
-                        {p.summary && <div className="row-sub">{p.summary}</div>}
-                      </div>
-                      <span className="badge">{p.status || 'new'}</span>
-                    </div>
-                    <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
-                      <button className="btn-primary" disabled={p.status === 'applied'} onClick={() => actOnProposal(p.id, 'apply')}>Apply</button>
-                      <button className="btn" disabled={p.status === 'rejected'} onClick={() => actOnProposal(p.id, 'reject')}>Reject</button>
-                    </div>
-                  </div>
-                ))}
+              <div className="section-head"><h2 className="section-title">Assistant Reply</h2></div>
+              <div className="section-card">
+                <p>{reply}</p>
+                {tripId && <p>Open trip: <Link className="link" href={`/trips/${tripId}`}>{tripId}</Link></p>}
               </div>
             </section>
           </div>
