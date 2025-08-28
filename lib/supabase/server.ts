@@ -3,8 +3,8 @@ import { cookies } from 'next/headers'
 import { createServerClient } from '@supabase/ssr'
 
 export async function createServerSupabase() {
-  // Next 15 returns a Promise here in many server contexts
-  const store = await cookies()
+  // Netlify/Next typings sometimes make cookies() appear async — await it.
+  const store = await (cookies() as any)
 
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
