@@ -4,31 +4,26 @@ import { createClient } from '@supabase/supabase-js'
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL as string
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY as string
 
-// IMPORTANT: the second arg type MUST be an inline literal, not an alias.
-export async function POST(req: Request, { params }: { params: { id: string } }) {
-  const id = params.id
+// NOTE: don't annotate the second arg; Netlify/Next was complaining about it.
+export async function POST(req: Request, _ctx: any) {
+  const id = _ctx?.params?.id as string | undefined
+  if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 })
 
-  // Require a Supabase session token from the client (Trip AI page sends it)
+  // Require the Supabase session token from the client
   const token = (req.headers.get('authorization') || '').replace(/^Bearer\s+/i, '')
-  if (!token) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  // Make a user-context Supabase client (uses that token for RLS)
+  // Supabase client with user context (so RLS works)
   const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     global: { headers: { Authorization: `Bearer ${token}` } },
   })
 
   // Load proposal
   const { data: p, error: e1 } = await sb.from('ai_proposals').select('*').eq('id', id).single()
-  if (e1 || !p) {
-    return NextResponse.json({ error: e1?.message || 'Not found' }, { status: 404 })
-  }
+  if (e1 || !p) return NextResponse.json({ error: e1?.message || 'Not found' }, { status: 404 })
 
   let err: string | null = null
-
   try {
-    // Apply minimal mappings safely; ignore unknown fields
     if (p.kind === 'flight') {
       const x = p.payload || {}
       const row = {
@@ -76,23 +71,18 @@ export async function POST(req: Request, { params }: { params: { id: string } })
       const { error } = await sb.from('transports').insert(row)
       if (error) throw error
     } else if (p.kind === 'itinerary_event') {
-      // Merge into trips.itinerary JSON array
-      const { data: trip } = await sb.from('trips')
-        .select('itinerary')
-        .eq('id', p.trip_id)
-        .single()
+      const { data: trip } = await sb.from('trips').select('itinerary').eq('id', p.trip_id).single()
       const next = Array.isArray(trip?.itinerary) ? [...trip!.itinerary] : []
       next.push({ id: String(Date.now()), ...(p.payload || {}) })
       const { error } = await sb.from('trips').update({ itinerary: next }).eq('id', p.trip_id)
       if (error) throw error
-    } // 'note' / 'other' -> just mark applied
+    }
+    // other kinds -> just mark applied below
   } catch (e: any) {
     err = e?.message || 'Failed to apply proposal'
   }
 
-  if (err) {
-    return NextResponse.json({ error: err }, { status: 400 })
-  }
+  if (err) return NextResponse.json({ error: err }, { status: 400 })
 
   await sb.from('ai_proposals').update({ status: 'applied' }).eq('id', id)
   return NextResponse.json({ ok: true })
