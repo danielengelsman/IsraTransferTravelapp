@@ -45,7 +45,6 @@ export default function NewTripPage() {
     end_date: endDate || null,
     description: description.trim() || null,
     status: 'draft',
-    created_by: me?.id,           // ✅ ensure ownership on insert
   })
   .select()
   .single()
