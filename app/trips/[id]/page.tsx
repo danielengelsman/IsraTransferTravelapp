@@ -66,6 +66,44 @@ export default function TripDetailPage() {
   // safe, role-aware permissions
   const isOwner = !!(me && trip && me.id === trip.created_by)
   const canEdit = !!(me && (me.role==='admin' || me.role==='finance' || (isOwner && trip?.status !== 'approved')))
+  // Refresh this trip and its related lists
+async function reloadTrip() {
+  if (!id) return
+
+  // Trip
+  {
+    const { data, error } = await sb.from('trips').select('*').eq('id', id).single()
+    if (!error && data) setTrip(data as Trip)
+  }
+
+  // Flights
+  {
+    const { data, error } = await sb.from('flights').select('*').eq('trip_id', id)
+    if (!error) setFlights((data || []) as Flight[])
+  }
+
+  // Accommodations
+  {
+    const { data, error } = await sb.from('accommodations').select('*').eq('trip_id', id)
+    if (!error) setAccs((data || []) as Accommodation[])
+  }
+
+  // Transports
+  {
+    const { data, error } = await sb.from('transports').select('*').eq('trip_id', id)
+    if (!error) setTrans((data || []) as Transport[])
+  }
+
+  // Invoices
+  {
+    const { data, error } = await sb
+      .from('invoices')
+      .select('*')
+      .eq('trip_id', id)
+      .order('uploaded_at', { ascending: false })
+    if (!error) setInvoices((data || []) as Invoice[])
+  }
+}
 
   const [flights,setFlights]=useState<Flight[]>([])
   const [accs,setAccs]=useState<Accommodation[]>([])
@@ -168,6 +206,10 @@ export default function TripDetailPage() {
     const {data:{user}}=await sb.auth.getUser(); if(!user){ if(!cancel) setStatus('need-login'); return }
     if(!cancel) await reloadAll()
   })(); return ()=>{cancel=true} },[id,sb])
+  useEffect(() => {
+  reloadTrip().catch(() => {})
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [id])
 
   if(status==='loading') return <div className="card">Loading…</div>
   if(status==='need-login') return <div className="card">You’re not logged in. <Link href="/login?next=/trips" className="underline">Login</Link></div>
