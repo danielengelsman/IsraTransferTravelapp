@@ -2,11 +2,10 @@
 import { NextResponse } from 'next/server'
 import { createServerSupabase } from '@/lib/supabase/server'
 
-export async function POST(
-  _req: Request,
-  { params }: { params: { id: string } }  // NOTE: inline-typed & destructured
-) {
-  const { id } = params
+export const runtime = 'nodejs'
+
+export async function POST(_req: Request, ctx: any) {
+  const id = ctx?.params?.id as string
   const sb = await createServerSupabase()
 
   const { data: { user } } = await sb.auth.getUser()
@@ -47,6 +46,7 @@ export async function POST(
   }
 
   if (err) return NextResponse.json({ error: err }, { status: 400 })
+
   await sb.from('ai_proposals').update({ status: 'applied' }).eq('id', id)
   return NextResponse.json({ ok: true })
 }
