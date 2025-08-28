@@ -1,56 +1,70 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabase } from '@/lib/supabase/server'
 
-export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs' // ensure cookies work in this environment
 
 export async function POST(req: NextRequest) {
-  const sb = createServerSupabase(req)
-  const { data: { user }, error: authErr } = await sb.auth.getUser()
-  if (authErr || !user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  try {
+    // ✅ no args, and awaited
+    const sb = await createServerSupabase()
 
-  const form = await req.formData()
-  const prompt = (form.get('prompt') as string) || ''
-  const tripId = (form.get('trip_id') as string) || null
-  // files are available with form.getAll('files') if/when you need them
+    // auth gate (cookie-based)
+    const { data: { user }, error: authErr } = await sb.auth.getUser()
+    if (authErr || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
 
-  // ---- Call OpenAI (simple baseline) ----
-  const r = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-    },
-    body: JSON.stringify({
-      model: 'gpt-4o-mini',
-      messages: [
-        {
-          role: 'system',
-          content:
-            'You are a Trip AI assistant for a travel ops app. Always output clear, structured suggestions for flights, accommodation, transport and itinerary items. If trip_id is provided, tailor suggestions to that trip.',
+    // read form data from the client
+    const form = await req.formData()
+    const prompt = (form.get('prompt') as string) || ''
+    const tripId = (form.get('trip_id') as string) || null
+    const _files = form.getAll('files') as File[] // (optional) not used below
+
+    // --- Call OpenAI (simple reply). You can enrich this later to emit proposals. ---
+    const openaiKey = process.env.OPENAI_API_KEY
+    let reply = ''
+    let proposals: any[] = []
+
+    if (openaiKey) {
+      const r = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${openaiKey}`,
+          'Content-Type': 'application/json',
         },
-        {
-          role: 'user',
-          content:
-            tripId
-              ? `Trip ID: ${tripId}\n\nUser request: ${prompt}`
-              : prompt,
-        },
-      ],
-      temperature: 0.2,
-    }),
-  })
+        body: JSON.stringify({
+          model: 'gpt-4o-mini',
+          temperature: 0.2,
+          messages: [
+            {
+              role: 'system',
+              content:
+                'You are Trip AI for a travel planner app. Be concise. When possible, output structured bullet points for flights, accommodation, transport, and itinerary.',
+            },
+            {
+              role: 'user',
+              content:
+                prompt || 'Create suggestions based on the attached receipts/itineraries.',
+            },
+          ],
+        }),
+      })
 
-  if (!r.ok) {
-    const txt = await r.text()
-    return NextResponse.json({ error: `OpenAI error: ${txt}` }, { status: 500 })
+      if (!r.ok) {
+        const txt = await r.text()
+        return NextResponse.json({ error: `OpenAI error: ${txt}` }, { status: 500 })
+      }
+
+      const j = await r.json()
+      reply = j?.choices?.[0]?.message?.content ?? ''
+    } else {
+      reply = 'Set OPENAI_API_KEY to enable AI replies.'
+    }
+
+    // You can optionally write proposals to `ai_proposals` here.
+    // For now we just return the text reply and an empty proposals array.
+    return NextResponse.json({ reply, proposals, trip_id: tripId })
+  } catch (err: any) {
+    return NextResponse.json({ error: err?.message || 'Server error' }, { status: 500 })
   }
-
-  const j = await r.json()
-  const reply = j?.choices?.[0]?.message?.content ?? 'No reply.'
-
-  // You can also parse the reply and create ai_proposals rows here.
-
-  return NextResponse.json({ reply, proposals: [] })
 }
