@@ -1,11 +1,15 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabase } from '@/lib/supabase/server'
 
-export async function POST(req: Request) {
-  const sb = await createServerSupabase()
-  const { data: { user } } = await sb.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
 
+export async function POST(req: NextRequest) {
+  const sb = createServerSupabase()
+
+  const { data: { user } } = await sb.auth.getUser()
+  if (!user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const { message, tripId } = await req.json().catch(() => ({} as any))
   if (!message) return NextResponse.json({ error: 'No message' }, { status: 400 })
 
