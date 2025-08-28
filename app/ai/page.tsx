@@ -6,7 +6,10 @@ import { createClient } from '@/lib/supabase/client'
 type Trip = { id: string; title: string | null }
 type Proposal = { id: string; kind: string; summary?: string | null; status?: 'new' | 'applied' | 'rejected' }
 
-export default function AiPage() {
+export default function AiPage()import { createClient } from '@/lib/supabase/client'
+import { useMemo } from 'react'
+
+const sb = useMemo(() => createClient(), []) {
   const sb = useMemo(() => createClient(), [])
   const [auth, setAuth] = useState<'checking' | 'need-login' | 'ready'>('checking')
 
@@ -17,6 +20,27 @@ export default function AiPage() {
   const [sending, setSending] = useState(false)
   const [reply, setReply] = useState('')
   const [proposals, setProposals] = useState<Proposal[]>([])
+  async function actOnProposal(id: string, action: 'apply' | 'reject') {
+  // 1) Get the current user token from Supabase on the client
+  const { data: { session } } = await sb.auth.getSession()
+  const token = session?.access_token
+
+  const res = await fetch(`/api/ai/proposals/${id}/${action}`, {
+    method: 'POST',
+    headers: token ? { authorization: `Bearer ${token}` } : {},
+  })
+
+  const j = await res.json().catch(() => ({} as any))
+  if (!res.ok) {
+    alert(j?.error || `${action} failed`)
+    return
+  }
+
+  // Optimistic UI update: mark status immediately
+  setProposals(prev =>
+    prev.map(p => p.id === id ? { ...p, status: action === 'apply' ? 'applied' : 'rejected' } : p)
+  )
+}
   const [error, setError] = useState('')
 
   useEffect(() => {
