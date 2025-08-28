@@ -8,6 +8,8 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import InvoiceUpload from '@/components/InvoiceUpload'
 import { IconPlane, IconHotel, IconCar, IconPlus } from '@/components/Icons'
+import TripAI from '@/components/TripAI'
+import AISuggestions from '@/components/AISuggestions'
 
 type TripStatus = 'draft' | 'awaiting_approval' | 'approved'
 
@@ -302,6 +304,20 @@ export default function TripDetailPage() {
             <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
               <button className="btn-primary" onClick={async () => { const { error } = await sb.from('flights').update(f).eq('id', f.id); if (error) return alert(error.message); await reloadAll() }}>Save</button>
               <button className="btn" onClick={() => setOpenFlight(s => ({ ...s, [f.id]: false }))}>Close</button>
+              {/* RIGHT */}
+<div className="stack">
+  {/* Trip AI Assistant */}
+  <section className="section">
+    <div className="section-head">
+      <h2 className="section-title">Assistant</h2>
+    </div>
+    <TripAI tripId={id!} />
+    <div style={{marginTop:12}} />
+    <AISuggestions tripId={id!} onApplied={reloadAll} />
+  </section>
+
+  {/* ...existing Accommodation/Transportation/Attachments sections... */}
+</div>
               {me?.role === 'admin' && trip?.status === 'draft' && (
                 <button
                   className="btn-primary"
