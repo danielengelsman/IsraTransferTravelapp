@@ -1,7 +1,10 @@
 import { NextResponse } from 'next/server'
 import { createClient as createServerSupabase } from '@/lib/supabase/server'
 
-export async function POST(_: Request, context: { params: { id: string } }) {
+export async function POST(_: Request, ctx: any) {
+  const id = String(ctx?.params?.id)
+  // ...leave the rest of your code as-is, just use `id` from this line
+}
   const id = context.params.id
   const sb = createServerSupabase()
 
