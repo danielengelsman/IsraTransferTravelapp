@@ -4,58 +4,71 @@ import { createServerSupabase } from '@/lib/supabase/server'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-export async function POST(request: Request) {
-  const sb = await createServerSupabase()
-
-  // Try Authorization: Bearer <jwt>, then cookies (works on Netlify)
-  const authHeader = request.headers.get('authorization') || ''
-  const bearer = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : undefined
-
-  let user = null
-  if (bearer) {
-    const { data: u1 } = await sb.auth.getUser(bearer)
-    user = u1?.user ?? null
-  }
-  if (!user) {
-    const { data: u2 } = await sb.auth.getUser()
-    user = u2?.user ?? null
-  }
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
-  const form = await request.formData()
-  const prompt = String(form.get('prompt') ?? '')
-  const trip_id = form.get('trip_id') ? String(form.get('trip_id')) : null
-  const files: File[] = []
-  for (const [k, v] of form.entries()) {
-    if (k === 'files' && v instanceof File) files.push(v)
-  }
-
-  const apiKey = process.env.OPENAI_API_KEY
-  if (!apiKey) return NextResponse.json({ error: 'OPENAI_API_KEY not set' }, { status: 500 })
-
+export async function POST(req: Request) {
   try {
-    const body = {
-      model: 'gpt-4o-mini',
-      messages: [
-        { role: 'system', content: 'You help create and structure business trip data.' },
-        {
-          role: 'user',
-          content: [
-            prompt || '(no free text prompt provided)',
-            trip_id ? `Attach to trip_id: ${trip_id}` : 'No trip_id provided (suggest new trip contents).',
-            files.length ? `Attached files: ${files.map(f => f.name).join(', ')}` : 'No files attached.',
-          ].join('\n'),
-        },
-      ],
+    // ---- Auth (works with Supabase cookies OR client Bearer token) ----
+    const sb = await createServerSupabase()
+    let { data: { user } } = await sb.auth.getUser()
+
+    if (!user) {
+      const auth = req.headers.get('authorization') || ''
+      const token = auth.startsWith('Bearer ') ? auth.slice(7) : ''
+      if (token) {
+        // Recreate a Supabase client that trusts the incoming Bearer token
+        // (avoids cookie issues in some hosts)
+        const { createClient } = await import('@supabase/supabase-js')
+        const url = process.env.NEXT_PUBLIC_SUPABASE_URL as string
+        const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY as string
+        const s2 = createClient(url, key, { global: { headers: { Authorization: `Bearer ${token}` } } })
+        const g = await s2.auth.getUser()
+        user = g.data.user || null
+      }
+    }
+
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // ---- Parse form-data ----
+    const ct = req.headers.get('content-type') || ''
+    let prompt = ''
+    let tripId: string | null = null
+
+    if (ct.includes('multipart/form-data')) {
+      const form = await req.formData()
+      prompt = String(form.get('prompt') ?? '')
+      tripId = (form.get('trip_id') ? String(form.get('trip_id')) : '') || null
+      // Files are available via `form.getAll('files')`, not used here yet.
+    } else {
+      const body = await req.json().catch(() => ({}))
+      prompt = String(body.prompt ?? '')
+      tripId = body.trip_id ? String(body.trip_id) : null
+    }
+
+    if (!prompt.trim()) {
+      return NextResponse.json({ error: 'Prompt is required' }, { status: 400 })
+    }
+
+    // ---- Call OpenAI (simple echo implementation) ----
+    const apiKey = process.env.OPENAI_API_KEY
+    if (!apiKey) {
+      return NextResponse.json({ error: 'Server missing OPENAI_API_KEY' }, { status: 500 })
     }
 
     const r = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
+        authorization: `Bearer ${apiKey}`,
+        'content-type': 'application/json',
       },
-      body: JSON.stringify(body),
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        messages: [
+          { role: 'system', content: 'You are Trip AI. Draft structured, concise suggestions.' },
+          { role: 'user', content: prompt },
+        ],
+        temperature: 0.2,
+      }),
     })
 
     if (!r.ok) {
@@ -63,8 +76,9 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: `OpenAI error: ${txt}` }, { status: 500 })
     }
 
-    const j = await r.json()
-    const reply = j?.choices?.[0]?.message?.content ?? 'No reply.'
+    const j: any = await r.json()
+    const reply: string = j?.choices?.[0]?.message?.content ?? 'No reply.'
+    // If/when you generate actionable proposals, return them in this array
     return NextResponse.json({ reply, proposals: [] })
   } catch (err: any) {
     return NextResponse.json({ error: err?.message || 'Server error' }, { status: 500 })
