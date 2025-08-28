@@ -1,17 +1,12 @@
 // app/api/ai/chat/route.ts
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import { createServerSupabase } from '@/lib/supabase/server'
 
-export const runtime = 'nodejs'
-export const dynamic = 'force-dynamic'
+export async function POST(req: Request) {
+  const sb = await createServerSupabase()   // <-- await here
 
-export async function POST(req: NextRequest) {
-  try {
-    // 1) Require login (uses cookies via createServerSupabase)
-    const sb = createServerSupabase()
-    const { data: { user } } = await sb.auth.getUser()
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const { data: { user } } = await sb.auth.getUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     // 2) Read input (works with JSON or multipart form)
