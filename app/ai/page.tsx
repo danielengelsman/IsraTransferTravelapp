@@ -84,13 +84,24 @@ function PageBody() {
     e.currentTarget.value = ''
   }
 
-  async function sendToAI() {
-    setError('')
-    setReply('')
-    setProposals([])
-    if (!prompt.trim() && files.length === 0) {
-      setError('Type a prompt or attach at least one file.')
-      return
+  async function sendToAI(message: string) {
+  const res = await fetch('/api/ai/chat', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',               // <— important
+    body: JSON.stringify({ message }),
+  })
+
+  if (res.status === 401) {
+    // Still not signed in on the server
+    alert('Please log in to use Trip AI.')
+    router.push('/login?next=/ai')
+    return
+  }
+
+  const data = await res.json()
+  // ...handle response
+}
     }
     setSending(true)
     try {
