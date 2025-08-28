@@ -199,7 +199,9 @@ function PageBody() {
                   <div key={p.id} className="card" style={{ padding: 12 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', gap: 8 }}>
                       <div>
-                        <div className="row-title" style={{ textTransform: 'capitalize' }}>{p.kind.replaceAll('_',' ')}</div>
+                        <div className="row-title" style={{ textTransform: 'capitalize' }}>{String(p.kind ?? '').replace(/_/g, ' ')}
+// or
+{String(p.kind ?? '').split('_').join(' ')}}</div>
                         {p.summary && <div className="row-sub">{p.summary}</div>}
                       </div>
                       <span className="badge">{p.status || 'new'}</span>
