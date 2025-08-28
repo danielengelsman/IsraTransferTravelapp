@@ -1,100 +1,146 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
 export const runtime = 'nodejs'
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const SUPABASE_ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY!
-
-type IncomingProposal = {
-  kind: 'trip' | 'accommodation' | 'transport' | 'itinerary_event' | 'note' | 'other'
+type Proposal = {
+  id: string
+  trip_id: string | null
+  kind: 'flight' | 'accommodation' | 'transport' | 'itinerary_event' | 'note' | 'other'
   summary?: string | null
   payload?: any
+  status?: 'new' | 'applied' | 'rejected'
 }
 
-function sbFrom(req: Request) {
+function isoDate(d: Date | null) {
+  return d && !isNaN(d.getTime()) ? d.toISOString().slice(0, 10) : null
+}
+function parsePrompt(prompt: string) {
+  const p = prompt.toLowerCase().replace(/\s+/g, ' ').trim()
+  const wantsTrip = /(make|create)\s+(a )?(new )?trip/.test(p)
+
+  const destMatch = p.match(/\bto\s+([a-z\s]+?)(?:\s+(on|from|for|starting|ending)\b|$)/i)
+  const destination = destMatch ? destMatch[1].trim().replace(/[^a-z\s]/gi, '').replace(/\s+/g, ' ') : null
+
+  const dateMatch =
+    p.match(/\b(?:on|from|starting)\s+([a-z]{3,9}\s+\d{1,2}(?:st|nd|rd|th)?(?:,\s*\d{4})?|\d{1,2}\s+[a-z]{3,9}(?:\s*\d{4})?)\b/i)
+  let startDate: Date | null = null
+  if (dateMatch) {
+    const cleaned = dateMatch[1].replace(/(\d{1,2})(st|nd|rd|th)/, '$1')
+    const d = new Date(cleaned)
+    startDate = isNaN(d.getTime()) ? null : d
+  }
+  return { wantsTrip, destination, startDate }
+}
+
+export async function POST(req: NextRequest) {
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  )
+
   const auth = req.headers.get('authorization') || ''
-  const jwt = auth.startsWith('Bearer ') ? auth.slice(7) : undefined
-  return createClient(SUPABASE_URL, SUPABASE_ANON, {
-    global: { headers: jwt ? { Authorization: `Bearer ${jwt}` } : {} },
-  })
-}
-
-export async function POST(req: Request) {
-  const sb = sbFrom(req)
-  const { data: { user } } = await sb.auth.getUser()
+  const token = auth.startsWith('Bearer ') ? auth.slice(7) : undefined
+  const { data: { user } } = token ? await supabase.auth.getUser(token) : { data: { user: null } as any }
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const fd = await req.formData()
-  const prompt = String(fd.get('prompt') || '')
-  const trip_id = String(fd.get('trip_id') || '').trim() || null
+  const form = await req.formData()
+  const prompt = (form.get('prompt') as string) || ''
+  const selectedTripId = (form.get('trip_id') as string) || null
 
-  if (!prompt && !fd.getAll('files').length) {
-    return NextResponse.json({ error: 'Please enter a prompt or attach files.' }, { status: 400 })
-  }
-
+  const proposals: Proposal[] = []
   let reply = ''
-  let proposals: IncomingProposal[] = []
 
-  try {
-    const sys = `
-You are Trip AI for a travel-planning app. Return STRICT JSON:
-{
-  "reply": "short confirmation",
-  "proposals": [
-    { "kind": "trip|accommodation|transport|itinerary_event|note|other",
-      "summary": "1-line",
-      "payload": {...} }
-  ]
-}
-Trip payload: { "title": string, "start_date"?: "YYYY-MM-DD", "end_date"?: "YYYY-MM-DD", "notes"?: string }
-Accommodation payload: { "name"?: string, "address"?: string, "check_in"?: "YYYY-MM-DD", "check_out"?: "YYYY-MM-DD", "notes"?: string }
-Transport payload: { "mode"?: "flight|train|car|bus|taxi|other", "from_city"?: string, "to_city"?: string, "depart_at"?: "YYYY-MM-DDTHH:mm", "arrive_at"?: "YYYY-MM-DDTHH:mm", "carrier"?: string, "code"?: string, "notes"?: string }
-Itinerary_event payload: { "title": string, "date"?: "YYYY-MM-DD", "start_time"?: "HH:mm", "end_time"?: "HH:mm", "location"?: string, "notes"?: string }
-Note payload: { "content": string }
-Never say you already created anything.
-`.trim()
+  const { wantsTrip, destination, startDate } = parsePrompt(prompt)
 
-    const body = {
-      model: 'gpt-4o-mini',
-      temperature: 0.2,
-      response_format: { type: 'json_object' as const },
-      messages: [
-        { role: 'system', content: sys },
-        { role: 'user', content: prompt || '(User uploaded docs.)' },
-      ],
+  if (!selectedTripId && wantsTrip && destination) {
+    const title = `Trip to ${destination.replace(/\b\w/g, c => c.toUpperCase())}`
+    const insert: any = { title, created_by: user.id }
+    const sd = isoDate(startDate)
+    if (sd) insert.start_date = sd
+
+    const ins = await supabase.from('trips').insert(insert).select('id,title,start_date').single()
+    if (ins.error) {
+      return NextResponse.json({ error: `Failed to create trip: ${ins.error.message}` }, { status: 500 })
     }
 
-    const aiRes = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+    proposals.push({
+      id: crypto.randomUUID(),
+      trip_id: ins.data.id,
+      kind: 'note',
+      summary: `Add planning note for ${destination}`,
+      payload: { trip_id: ins.data.id, content: `Planning for ${title}`, created_by: user.id },
+      status: 'new',
     })
-    if (!aiRes.ok) {
-      const txt = await aiRes.text()
-      return NextResponse.json({ error: `OpenAI error: ${txt}` }, { status: 500 })
+
+    reply = `Created trip "${ins.data.title}".`
+    return NextResponse.json({ reply, proposals })
+  }
+
+  if (selectedTripId) {
+    const wantsHotel = /(hotel|accommodation)/i.test(prompt)
+    const wantsFlight = /\b(flight|fly|airline)\b/i.test(prompt)
+    const wantsEvent  = /\b(itinerary|event|meeting|activity)\b/i.test(prompt)
+
+    if (wantsHotel) {
+      proposals.push({
+        id: crypto.randomUUID(),
+        trip_id: selectedTripId,
+        kind: 'accommodation',
+        summary: 'Add a hotel (placeholder)',
+        payload: {
+          trip_id: selectedTripId,
+          name: 'TBD Hotel',
+          check_in: isoDate(startDate),
+          check_out: null,
+          location: destination || null,
+          created_by: user.id,
+        },
+        status: 'new',
+      })
+    }
+    if (wantsFlight) {
+      proposals.push({
+        id: crypto.randomUUID(),
+        trip_id: selectedTripId,
+        kind: 'transport',
+        summary: 'Add an outbound flight (placeholder)',
+        payload: {
+          trip_id: selectedTripId,
+          mode: 'flight',
+          from: null,
+          to: destination || null,
+          depart_time: startDate ? startDate.toISOString() : null,
+          created_by: user.id,
+        },
+        status: 'new',
+      })
+    }
+    if (wantsEvent) {
+      proposals.push({
+        id: crypto.randomUUID(),
+        trip_id: selectedTripId,
+        kind: 'itinerary_event',
+        summary: 'Add itinerary event (placeholder)',
+        payload: {
+          trip_id: selectedTripId,
+          title: 'Planned activity',
+          start_time: startDate ? startDate.toISOString() : null,
+          end_time: null,
+          location: destination || null,
+          notes: null,
+          created_by: user.id,
+        },
+        status: 'new',
+      })
     }
 
-    const ai = await aiRes.json()
-    const raw = ai?.choices?.[0]?.message?.content ?? '{}'
-    const parsed = JSON.parse(raw)
-    reply = String(parsed.reply || '').slice(0, 4000)
-    proposals = Array.isArray(parsed.proposals) ? parsed.proposals : []
-  } catch {
-    reply = 'Drafted a trip proposal from your request.'
-    proposals = [{ kind: 'trip', summary: 'New Trip', payload: { title: 'New Trip' } }]
+    if (proposals.length) {
+      return NextResponse.json({ reply: 'Drafted proposals. Review and Apply.', proposals })
+    }
   }
 
-  const inserted: any[] = []
-  for (const p of proposals) {
-    const { data } = await sb
-      .from('ai_proposals')
-      .insert({ trip_id, kind: p.kind, summary: p.summary ?? null, payload: p.payload ?? {}, status: 'new' })
-      .select('id, trip_id, kind, summary, payload, status')
-      .single()
-    if (data) inserted.push(data)
-  }
-
-  return NextResponse.json({ reply, proposals: inserted })
+  reply =
+    'I can create trips and add items. Try: “Create a new trip to Paris on Oct 12.” Or select a trip and say “Add a hotel Apr 12–14 and a flight.”'
+  return NextResponse.json({ reply, proposals: [] })
 }
