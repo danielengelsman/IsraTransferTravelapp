@@ -1,26 +1,22 @@
+// app/api/ai/proposals/[id]/reject/route.ts
 import { NextResponse } from 'next/server'
-import { createServerSupabase } from '@/lib/supabase/server'
+import { createClient } from '@supabase/supabase-js'
 
-type Ctx = { params: { id: string } }
+export async function POST(req: Request, ctx: { params: { id: string } }) {
+  const id = ctx.params.id
 
-export async function POST(req: Request, { params }: Ctx) {
-  const sb = createServerSupabase()
+  const auth = req.headers.get('authorization') || ''
+  const token = auth.toLowerCase().startsWith('bearer ') ? auth.slice(7) : null
+  if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  // cookie auth
-  let { data: { user } } = await sb.auth.getUser()
+  const sb = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    { global: { headers: { Authorization: `Bearer ${token}` } } }
+  )
 
-  // bearer fallback
-  if (!user) {
-    const hdr = req.headers.get('authorization') || ''
-    if (hdr.toLowerCase().startsWith('bearer ')) {
-      const token = hdr.slice(7)
-      const { data } = await sb.auth.getUser(token)
-      user = data?.user ?? null
-    }
-  }
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
-  const { error } = await sb.from('ai_proposals').update({ status: 'rejected' }).eq('id', params.id)
+  const { error } = await sb.from('ai_proposals').update({ status: 'rejected' }).eq('id', id)
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
+
   return NextResponse.json({ ok: true })
 }
