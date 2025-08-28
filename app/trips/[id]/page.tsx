@@ -18,8 +18,11 @@ type Trip = {
   location: string | null
   start_date: string | null
   end_date: string | null
-  status: TripStatus            // ← added
-  created_by: string | null     // ← added
+  status: TripStatus
+  created_by: string | null
+  submitted_at: string | null      // ← add
+  approved_by: string | null       // ← add
+  approved_at: string | null       // ← add
   itinerary?: any[]
 }
 
