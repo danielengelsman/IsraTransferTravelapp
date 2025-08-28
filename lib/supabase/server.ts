@@ -1,25 +1,23 @@
 // lib/supabase/server.ts
 import { cookies } from 'next/headers'
-import { createServerClient, type CookieOptions } from '@supabase/ssr'
+import { createServerClient } from '@supabase/ssr'
 
 export function createServerSupabase() {
-  const cookieStore = cookies()
-
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
         get(name: string) {
-          const c = cookieStore.get(name)
-          return c?.value
+          return cookies().get(name)?.value
         },
-        set(name: string, value: string, options: CookieOptions) {
-          cookieStore.set({ name, value, ...options })
+        set(name: string, value: string, options?: any) {
+          // Next exposes set(name, value, options)
+          cookies().set(name, value, options as any)
         },
-        remove(name: string, options: CookieOptions) {
-          // expire immediately
-          cookieStore.set({ name, value: '', ...options, maxAge: 0 })
+        remove(name: string, options?: any) {
+          // No explicit delete API — set an expired cookie instead
+          cookies().set(name, '', { ...(options || {}), maxAge: 0 })
         },
       },
     }
