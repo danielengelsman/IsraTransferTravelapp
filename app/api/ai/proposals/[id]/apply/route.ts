@@ -2,20 +2,24 @@
 import { NextResponse } from 'next/server'
 import { createServerSupabase } from '@/lib/supabase/server'
 
-type Ctx = { params: { id: string } }
-
-export async function POST(_req: Request, context: Ctx) {
-  const { id } = context.params
+export async function POST(
+  _req: Request,
+  { params }: { params: { id: string } }  // NOTE: inline-typed & destructured
+) {
+  const { id } = params
   const sb = await createServerSupabase()
 
   const { data: { user } } = await sb.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   // Load proposal
-  const { data: p, error: e1 } = await sb.from('ai_proposals').select('*').eq('id', id).single()
+  const { data: p, error: e1 } = await sb
+    .from('ai_proposals')
+    .select('*')
+    .eq('id', id)
+    .single()
   if (e1 || !p) return NextResponse.json({ error: e1?.message || 'Not found' }, { status: 404 })
 
-  // Apply based on kind
   let err: string | null = null
   try {
     switch (p.kind) {
