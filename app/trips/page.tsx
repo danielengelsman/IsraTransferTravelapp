@@ -1,7 +1,7 @@
 'use client'
 export const dynamic = 'force-dynamic'
 
-import React, { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
@@ -23,14 +23,17 @@ type Trip = {
 function niceDate(d?: string | null) {
   if (!d) return '—'
   const dt = new Date(d)
-  return isNaN(+dt)
-    ? '—'
-    : dt.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: '2-digit' })
+  return isNaN(+dt) ? '—' : dt.toLocaleDateString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: '2-digit'
+  })
 }
 
 function StatusBadge({ status }: { status: TripStatus }) {
   const color =
-    status === 'approved' ? '#16a34a' : status === 'awaiting_approval' ? '#ca8a04' : '#6b7280'
+    status === 'approved' ? '#16a34a' :
+    status === 'awaiting_approval' ? '#ca8a04' : '#6b7280'
   return (
     <span
       className="badge"
@@ -70,7 +73,7 @@ export default function TripsPage() {
     return () => { cancel = true }
   }, [sb])
 
-  // 2) Load trips once we know the role
+  // 2) Load trips (role-aware)
   useEffect(() => {
     if (!me) return
     ;(async () => {
@@ -98,7 +101,7 @@ export default function TripsPage() {
         start_date: startDate || null,
         end_date: endDate || null,
         description: description.trim() || null,
-        status: 'draft' as TripStatus // created_by is set by DB trigger
+        status: 'draft' as TripStatus
       }
       const { data, error } = await sb.from('trips').insert(payload).select().single()
       if (error) throw error
@@ -122,11 +125,12 @@ export default function TripsPage() {
     return <div className="card" style={{ color: '#b91c1c' }}>{message}</div>
   }
 
-  // MAIN (with left sidebar)
+  // MAIN
   return (
-  <div style={{ display: 'grid', gridTemplateColumns: '260px 1fr', gap: 16, alignItems: 'start' }}>
-    <Sidebar />
-    <main className="space-y-6">
+    <div style={{ display: 'grid', gridTemplateColumns: '260px 1fr', gap: 16, alignItems: 'start' }}>
+      <Sidebar />
+
+      <main className="space-y-6">
         {/* Page header */}
         <div className="trip-cover" style={{ padding: 16, borderRadius: 16 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
@@ -194,7 +198,14 @@ export default function TripsPage() {
               </div>
             </div>
           ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(260px,1fr))', gap: 12, padding: 12 }}>
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit,minmax(260px,1fr))',
+                gap: 12,
+                padding: 12,
+              }}
+            >
               {trips.map((t) => (
                 <Link
                   key={t.id}
@@ -208,8 +219,12 @@ export default function TripsPage() {
                     </div>
                     <StatusBadge status={(t.status || 'draft') as TripStatus} />
                   </div>
-                  <div className="row-sub">{t.location || '—'}</div>
-                  <div className="row-sub">{niceDate(t.start_date)} → {niceDate(t.end_date)}</div>
+                  <div className="row-sub">
+                    {t.location || '—'}
+                  </div>
+                  <div className="row-sub">
+                    {niceDate(t.start_date)} → {niceDate(t.end_date)}
+                  </div>
                   {t.description && (
                     <div style={{ fontSize: 12, opacity: 0.9, marginTop: 4 }}>
                       {t.description.length > 140 ? t.description.slice(0, 140) + '…' : t.description}
@@ -217,7 +232,8 @@ export default function TripsPage() {
                   )}
                 </Link>
               ))}
-            )}
+            </div>
+          )}
         </div>
       </main>
     </div>
