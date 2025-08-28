@@ -1,25 +1,56 @@
-// app/api/ai/chat/route.ts
-import { NextResponse, NextRequest } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabase } from '@/lib/supabase/server'
 
-export async function POST(req: NextRequest) {
-  const sb = createServerSupabase()
+export const dynamic = 'force-dynamic'
 
-  // Make sure we have a user
-  const { data: userData, error: userErr } = await sb.auth.getUser()
-  if (userErr || !userData?.user) {
+export async function POST(req: NextRequest) {
+  const sb = createServerSupabase(req)
+  const { data: { user }, error: authErr } = await sb.auth.getUser()
+  if (authErr || !user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  // Read the incoming form data
-  const fd = await req.formData()
-  const prompt = String(fd.get('prompt') || '')
-  const tripId = String(fd.get('trip_id') || '')
+  const form = await req.formData()
+  const prompt = (form.get('prompt') as string) || ''
+  const tripId = (form.get('trip_id') as string) || null
+  // files are available with form.getAll('files') if/when you need them
 
-  // TODO: call your OpenAI logic here and build proposals
-  // For now, just echo back to verify 401s are gone:
-  return NextResponse.json({
-    reply: `OK, received: "${prompt}" ${tripId ? `(trip: ${tripId})` : ''}`,
-    proposals: [],
+  // ---- Call OpenAI (simple baseline) ----
+  const r = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+    },
+    body: JSON.stringify({
+      model: 'gpt-4o-mini',
+      messages: [
+        {
+          role: 'system',
+          content:
+            'You are a Trip AI assistant for a travel ops app. Always output clear, structured suggestions for flights, accommodation, transport and itinerary items. If trip_id is provided, tailor suggestions to that trip.',
+        },
+        {
+          role: 'user',
+          content:
+            tripId
+              ? `Trip ID: ${tripId}\n\nUser request: ${prompt}`
+              : prompt,
+        },
+      ],
+      temperature: 0.2,
+    }),
   })
+
+  if (!r.ok) {
+    const txt = await r.text()
+    return NextResponse.json({ error: `OpenAI error: ${txt}` }, { status: 500 })
+  }
+
+  const j = await r.json()
+  const reply = j?.choices?.[0]?.message?.content ?? 'No reply.'
+
+  // You can also parse the reply and create ai_proposals rows here.
+
+  return NextResponse.json({ reply, proposals: [] })
 }
