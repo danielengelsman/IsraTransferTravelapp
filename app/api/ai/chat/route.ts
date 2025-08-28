@@ -2,39 +2,42 @@
 import { NextResponse } from 'next/server'
 import { createServerSupabase } from '@/lib/supabase/server'
 
-export async function POST(req: Request) {
-  const sb = await createServerSupabase()   // <-- await here
+export const runtime = 'nodejs' // ensure Node runtime for FormData/File
 
+export async function POST(req: Request) {
+  const sb = await createServerSupabase()
   const { data: { user } } = await sb.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
 
-    // 2) Read input (works with JSON or multipart form)
-    let prompt = ''
-    const ct = req.headers.get('content-type') || ''
-    if (ct.includes('multipart/form-data')) {
-      const fd = await req.formData()
-      prompt = String(fd.get('prompt') ?? '')
-      // Note: fd.getAll('files') available if you later need to read uploads
-    } else if (ct.includes('application/json')) {
-      const body = await req.json().catch(() => ({} as any))
-      prompt = String(body?.prompt ?? '')
-    }
+  const apiKey = process.env.OPENAI_API_KEY
+  if (!apiKey) return NextResponse.json({ error: 'Server missing OPENAI_API_KEY' }, { status: 500 })
 
-    // 3) Call OpenAI (ensure OPENAI_API_KEY is set in Netlify)
-    const sys =
-      'You are a helpful Trip Assistant. Return concise, bullet-point suggestions for flights, accommodation, transport, and itinerary.'
+  try {
+    const form = await req.formData()
+    const prompt = (form.get('prompt') as string) ?? ''
+    const tripId = (form.get('trip_id') as string) || ''
+    const files = (form.getAll('files') as File[]) || []
+
+    // Build a simple message. (You can enrich with OCR/text later.)
+    const filenames = files.map(f => f.name).join(', ')
+    const userMsg =
+      `${prompt}${filenames ? `\n\nAttached files: ${filenames}` : ''}${tripId ? `\nTrip context: ${tripId}` : ''}`
+
     const r = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+        'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
         model: 'gpt-4o-mini',
         messages: [
-          { role: 'system', content: sys },
-          { role: 'user', content: prompt || 'Draft travel suggestions.' },
+          {
+            role: 'system',
+            content:
+              'You are a Trip AI assistant. Extract flights, accommodation, transport, and itinerary items from the user prompt and attachments. Summarize clearly.',
+          },
+          { role: 'user', content: userMsg },
         ],
         temperature: 0.2,
       }),
@@ -47,7 +50,7 @@ export async function POST(req: Request) {
 
     const j = (await r.json()) as any
     const reply = j?.choices?.[0]?.message?.content ?? 'No reply.'
-    // You can also return proposals: [] here if you generate them
+    // For now just return text; proposals can be added later
     return NextResponse.json({ reply, proposals: [] })
   } catch (err: any) {
     return NextResponse.json({ error: err?.message || 'Server error' }, { status: 500 })
