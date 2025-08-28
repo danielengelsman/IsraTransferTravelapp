@@ -31,8 +31,24 @@ type Flight = {
   flight_type:'international'|'internal'|null; carrier:string|null; flight_number:string|null;
   depart_airport:string|null; arrive_airport:string|null; depart_time:string|null; arrive_time:string|null; notes:string|null
 }
-type Accommodation = { id:string; trip_id:string; name:string|null; address:string|null; check_in:string|null; check_out:string|null; booking_ref:string|null; notes:string|null }
-type Transport = { id:string; trip_id:string; type:'car_hire'|'toll'|'train'|'taxi'|'other'|null; company:string|null; pickup_location:string|null; dropoff_location:string|null; start_time:string|null; end_time:string|null; cost:number|null; notes:string|null }
+type Accommodation = {
+  id:string; trip_id:string;
+  name:string|null; address:string|null;
+  check_in:string|null; check_out:string|null;
+  booking_ref:string|null; notes:string|null;
+  cost:number|null;                 // ⬅️ NEW
+  currency:string|null;             // ⬅️ NEW
+}
+
+type Transport = {
+  id:string; trip_id:string;
+  type:'car_hire'|'toll'|'train'|'taxi'|'other'|null;
+  company:string|null; pickup_location:string|null; dropoff_location:string|null;
+  start_time:string|null; end_time:string|null;
+  cost:number|null;
+  currency:string|null;             // ⬅️ NEW
+  notes:string|null;
+}
 type Invoice = { id:string; trip_id:string; section:'flight'|'accommodation'|'transport'|'other'|null; file_url:string|null; file_path:string|null; name?:string|null; uploaded_at?:string|null; amount?:number|null; currency?:string|null; flight_id?:string|null; accommodation_id?:string|null; transport_id?:string|null }
 
 type TripEvent = {
