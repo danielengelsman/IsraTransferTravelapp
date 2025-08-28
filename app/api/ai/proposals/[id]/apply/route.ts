@@ -1,10 +1,11 @@
 import { NextResponse } from 'next/server'
 import { createServerSupabase } from '@/lib/supabase/server'
 
-export async function POST(_req: Request, { params }: { params: { id: string } }) {
-  const id = params.id
+export async function POST(_req: Request, context: any) {
+  const { id } = (context?.params || {}) as { id: string }
   const sb = createServerSupabase()
 
+  // Load proposal
   const { data: p, error: e1 } = await sb
     .from('ai_proposals')
     .select('*')
@@ -15,7 +16,7 @@ export async function POST(_req: Request, { params }: { params: { id: string } }
     return NextResponse.json({ error: e1?.message || 'Not found' }, { status: 404 })
   }
 
-  // (apply proposal here later)
+  // TODO: apply the proposal to your domain (create flights, etc.)
 
   const { error: e2 } = await sb
     .from('ai_proposals')
