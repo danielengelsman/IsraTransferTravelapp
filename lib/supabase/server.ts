@@ -2,10 +2,8 @@
 import { cookies } from 'next/headers'
 import { createServerClient } from '@supabase/ssr'
 
-/**
- * Reads Supabase session from Next cookies.
- * Also forwards Authorization header (Bearer <token>) if the client sent one.
- */
+/** Create a Supabase server client that reads cookies and (if present)
+ * forwards the Authorization header from the incoming request. */
 export function createServerSupabase(req?: Request) {
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
