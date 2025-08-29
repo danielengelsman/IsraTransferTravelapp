@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { createBrowserClient } from "@/lib/supabase/client";
+import TripAIForm from '@/components/TripAIForm';
 
 type Trip = { id: string; title: string; dest_city: string | null; dest_country: string | null; start_date: string | null; end_date: string | null; };
 type Flight = { id: string; carrier: string | null; flight_number: string | null; depart_airport: string | null; arrive_airport: string | null; depart_time: string | null; arrive_time: string | null; cost_amount: number | null; cost_currency: string | null; };
