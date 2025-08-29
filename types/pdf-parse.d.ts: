@@ -1,0 +1,6 @@
+// types/pdf-parse.d.ts
+declare module 'pdf-parse' {
+  type PdfResult = { text?: string; [key: string]: any };
+  const pdfParse: (data: Buffer) => Promise<PdfResult>;
+  export default pdfParse;
+}
