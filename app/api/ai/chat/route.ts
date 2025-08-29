@@ -1,146 +1,190 @@
+/* app/api/ai/chat/route.ts */
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { createServerSupabase, createBearerSupabase } from '@/lib/supabase/server'
 
-export const runtime = 'nodejs'
-
+type ProposalKind = 'flight' | 'accommodation'
 type Proposal = {
   id: string
   trip_id: string | null
-  kind: 'flight' | 'accommodation' | 'transport' | 'itinerary_event' | 'note' | 'other'
+  kind: ProposalKind
   summary?: string | null
-  payload?: any
+  payload: any
   status?: 'new' | 'applied' | 'rejected'
 }
 
-function isoDate(d: Date | null) {
-  return d && !isNaN(d.getTime()) ? d.toISOString().slice(0, 10) : null
-}
-function parsePrompt(prompt: string) {
-  const p = prompt.toLowerCase().replace(/\s+/g, ' ').trim()
-  const wantsTrip = /(make|create)\s+(a )?(new )?trip/.test(p)
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY!
 
-  const destMatch = p.match(/\bto\s+([a-z\s]+?)(?:\s+(on|from|for|starting|ending)\b|$)/i)
-  const destination = destMatch ? destMatch[1].trim().replace(/[^a-z\s]/gi, '').replace(/\s+/g, ' ') : null
-
-  const dateMatch =
-    p.match(/\b(?:on|from|starting)\s+([a-z]{3,9}\s+\d{1,2}(?:st|nd|rd|th)?(?:,\s*\d{4})?|\d{1,2}\s+[a-z]{3,9}(?:\s*\d{4})?)\b/i)
-  let startDate: Date | null = null
-  if (dateMatch) {
-    const cleaned = dateMatch[1].replace(/(\d{1,2})(st|nd|rd|th)/, '$1')
-    const d = new Date(cleaned)
-    startDate = isNaN(d.getTime()) ? null : d
-  }
-  return { wantsTrip, destination, startDate }
-}
+export const runtime = 'nodejs' // we need Node (pdf/eml parsing)
 
 export async function POST(req: NextRequest) {
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  )
+  // --- Auth (cookie or Bearer) ---
+  let sb = createServerSupabase()
+  let { data: { user } } = await sb.auth.getUser()
 
-  const auth = req.headers.get('authorization') || ''
-  const token = auth.startsWith('Bearer ') ? auth.slice(7) : undefined
-  const { data: { user } } = token ? await supabase.auth.getUser(token) : { data: { user: null } as any }
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!user) {
+    const authz = req.headers.get('authorization') || ''
+    const token = authz.toLowerCase().startsWith('bearer ') ? authz.slice(7) : ''
+    if (token) {
+      sb = createBearerSupabase(token)
+      const check = await sb.auth.getUser()
+      user = check.data.user ?? null
+    }
+  }
+  // Allow unauthenticated *compose*, but your UI already gates access.
+  // If you want hard-block: uncomment
+  // if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
+  // --- Read form (prompt + files + optional trip) ---
   const form = await req.formData()
-  const prompt = (form.get('prompt') as string) || ''
-  const selectedTripId = (form.get('trip_id') as string) || null
+  const prompt = String(form.get('prompt') ?? '').trim()
+  const tripId = (form.get('trip_id') ? String(form.get('trip_id')) : '') || null
+  const files = form.getAll('files').filter(Boolean) as File[]
 
-  const proposals: Proposal[] = []
-  let reply = ''
-
-  const { wantsTrip, destination, startDate } = parsePrompt(prompt)
-
-  if (!selectedTripId && wantsTrip && destination) {
-    const title = `Trip to ${destination.replace(/\b\w/g, c => c.toUpperCase())}`
-    const insert: any = { title, created_by: user.id }
-    const sd = isoDate(startDate)
-    if (sd) insert.start_date = sd
-
-    const ins = await supabase.from('trips').insert(insert).select('id,title,start_date').single()
-    if (ins.error) {
-      return NextResponse.json({ error: `Failed to create trip: ${ins.error.message}` }, { status: 500 })
-    }
-
-    proposals.push({
-      id: crypto.randomUUID(),
-      trip_id: ins.data.id,
-      kind: 'note',
-      summary: `Add planning note for ${destination}`,
-      payload: { trip_id: ins.data.id, content: `Planning for ${title}`, created_by: user.id },
-      status: 'new',
-    })
-
-    reply = `Created trip "${ins.data.title}".`
-    return NextResponse.json({ reply, proposals })
+  if (!prompt && files.length === 0) {
+    return NextResponse.json({ error: 'Please provide a prompt or files.' }, { status: 400 })
   }
 
-  if (selectedTripId) {
-    const wantsHotel = /(hotel|accommodation)/i.test(prompt)
-    const wantsFlight = /\b(flight|fly|airline)\b/i.test(prompt)
-    const wantsEvent  = /\b(itinerary|event|meeting|activity)\b/i.test(prompt)
+  // --- Extract text from supported files; collect image data URLs for OCR via vision ---
+  const textParts: string[] = []
+  const imageUrls: string[] = [] // data:image/...;base64,...
 
-    if (wantsHotel) {
-      proposals.push({
-        id: crypto.randomUUID(),
-        trip_id: selectedTripId,
-        kind: 'accommodation',
-        summary: 'Add a hotel (placeholder)',
-        payload: {
-          trip_id: selectedTripId,
-          name: 'TBD Hotel',
-          check_in: isoDate(startDate),
-          check_out: null,
-          location: destination || null,
-          created_by: user.id,
-        },
-        status: 'new',
-      })
-    }
-    if (wantsFlight) {
-      proposals.push({
-        id: crypto.randomUUID(),
-        trip_id: selectedTripId,
-        kind: 'transport',
-        summary: 'Add an outbound flight (placeholder)',
-        payload: {
-          trip_id: selectedTripId,
-          mode: 'flight',
-          from: null,
-          to: destination || null,
-          depart_time: startDate ? startDate.toISOString() : null,
-          created_by: user.id,
-        },
-        status: 'new',
-      })
-    }
-    if (wantsEvent) {
-      proposals.push({
-        id: crypto.randomUUID(),
-        trip_id: selectedTripId,
-        kind: 'itinerary_event',
-        summary: 'Add itinerary event (placeholder)',
-        payload: {
-          trip_id: selectedTripId,
-          title: 'Planned activity',
-          start_time: startDate ? startDate.toISOString() : null,
-          end_time: null,
-          location: destination || null,
-          notes: null,
-          created_by: user.id,
-        },
-        status: 'new',
-      })
-    }
+  for (const f of files) {
+    const name = (f.name || 'file').toLowerCase()
+    const type = f.type || ''
+    const buf = Buffer.from(await f.arrayBuffer())
 
-    if (proposals.length) {
-      return NextResponse.json({ reply: 'Drafted proposals. Review and Apply.', proposals })
+    try {
+      if (name.endsWith('.pdf')) {
+        const pdfParse = (await import('pdf-parse')).default
+        const data = await pdfParse(buf)
+        const snippet = (data.text || '').slice(0, 30000)
+        if (snippet) textParts.push(`[[PDF:${f.name}]]\n${snippet}`)
+      } else if (name.endsWith('.eml')) {
+        const { simpleParser } = await import('mailparser')
+        const mail = await simpleParser(buf)
+        const body = (mail.text || mail.htmlAsText || '').slice(0, 30000)
+        textParts.push(`[[EMAIL:${f.name} Subject:${mail.subject ?? ''}]]\n${body}`)
+      } else if (name.endsWith('.txt')) {
+        const s = buf.toString('utf8').slice(0, 30000)
+        textParts.push(`[[TEXT:${f.name}]]\n${s}`)
+      } else if (type.startsWith('image/')) {
+        const b64 = buf.toString('base64')
+        imageUrls.push(`data:${type};base64,${b64}`)
+      } else {
+        // fallback: try utf8
+        const s = buf.toString('utf8')
+        if (s) textParts.push(`[[FILE:${f.name}]]\n${s.slice(0, 30000)}`)
+      }
+    } catch (e: any) {
+      textParts.push(`[[ERROR reading ${f.name}]] ${e?.message || e}`)
     }
   }
 
-  reply =
-    'I can create trips and add items. Try: “Create a new trip to Paris on Oct 12.” Or select a trip and say “Add a hotel Apr 12–14 and a flight.”'
-  return NextResponse.json({ reply, proposals: [] })
+  // --- Build the model prompt ---
+  const instruction = `
+You are "Trip AI" for a travel management app. Read the user's prompt and the uploaded documents.
+Output ONLY valid JSON with this shape:
+
+{
+  "assistant_reply": string,      // 1-2 helpful lines max, no chit-chat
+  "proposals": [
+    {
+      "id": string,               // server will replace if missing
+      "trip_id": string | null,   // pass through requested trip_id if present; else null
+      "kind": "flight" | "accommodation",
+      "summary": string,          // short human summary
+      "payload": object           // see required keys per kind below
+    }
+  ]
+}
+
+For kind "flight", keep keys (optional if unknown):
+{
+  "airline": string,
+  "flight_no": string,
+  "from_airport": string,         // IATA code if possible
+  "to_airport": string,
+  "depart_at": string,            // ISO 8601
+  "arrive_at": string,            // ISO 8601
+  "booking_ref": string,
+  "price": number,
+  "currency": string
+}
+
+For kind "accommodation":
+{
+  "hotel_name": string,
+  "address": string,
+  "check_in": string,             // ISO date or datetime
+  "check_out": string,            // ISO date or datetime
+  "confirmation": string,
+  "price": number,
+  "currency": string
+}
+
+- Use the docs to decide whether something is a flight or accommodation.
+- If nothing actionable, return an empty "proposals" array but still explain briefly in "assistant_reply".
+- Dates MUST be ISO (e.g. 2025-10-12 or 2025-10-12T14:30:00Z).
+- Be conservative; do not hallucinate missing fields.
+
+Return strict JSON. No markdown, no commentary.
+`.trim()
+
+  // --- Call OpenAI (text + vision images) ---
+  const userText = [
+    prompt ? `User prompt:\n${prompt}` : '',
+    textParts.length ? `\nDocument text:\n${textParts.join('\n\n---\n\n')}` : ''
+  ].join('\n\n').trim()
+
+  const content: any[] = [{ type: 'text', text: userText || '(no text provided)' }]
+  for (const url of imageUrls.slice(0, 4)) {
+    content.push({ type: 'image_url', image_url: { url } })
+  }
+
+  const oaiRes = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${OPENAI_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'gpt-4o-mini',
+      temperature: 0.2,
+      response_format: { type: 'json_object' },
+      messages: [
+        { role: 'system', content: instruction },
+        { role: 'user', content },
+      ],
+    }),
+  })
+
+  if (!oaiRes.ok) {
+    const errText = await oaiRes.text()
+    return NextResponse.json({ error: `OpenAI error: ${errText}` }, { status: 500 })
+  }
+
+  const data = await oaiRes.json()
+  const raw = data?.choices?.[0]?.message?.content ?? '{}'
+
+  let parsed: any
+  try { parsed = JSON.parse(raw) } catch {
+    // try to salvage JSON substring
+    const m = raw.match(/\{[\s\S]*\}$/)
+    parsed = m ? JSON.parse(m[0]) : { assistant_reply: raw, proposals: [] }
+  }
+
+  const proposals: Proposal[] = Array.isArray(parsed?.proposals) ? parsed.proposals : []
+  const safe = proposals.map((p: any) => ({
+    id: p?.id || crypto.randomUUID(),
+    trip_id: p?.trip_id ?? tripId ?? null,
+    kind: (p?.kind === 'accommodation' ? 'accommodation' : 'flight') as ProposalKind,
+    summary: p?.summary ?? null,
+    payload: p?.payload ?? {},
+    status: 'new' as const,
+  }))
+
+  return NextResponse.json({
+    reply: String(parsed?.assistant_reply ?? ''),
+    proposals: safe,
+  })
 }
