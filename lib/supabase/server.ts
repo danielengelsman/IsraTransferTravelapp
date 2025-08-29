@@ -1,14 +1,9 @@
 // lib/supabase/server.ts
 import { cookies } from 'next/headers'
-import { createServerClient } from '@supabase/ssr'
+import { createServerClient, type CookieOptions } from '@supabase/ssr'
 
-/**
- * Server-side Supabase client (Next.js 15 compatible).
- * - Uses async cookies() API
- * - Safe no-op try/catch around cookie read/write in edge/route contexts
- */
-export async function createServerSupabase() {
-  const store = await cookies()
+export function createServerSupabase() {
+  const cookieStore = cookies()
 
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -16,25 +11,13 @@ export async function createServerSupabase() {
     {
       cookies: {
         get(name: string) {
-          try {
-            return store.get(name)?.value
-          } catch {
-            return undefined
-          }
+          try { return cookieStore.get(name)?.value } catch { return undefined }
         },
-        set(name: string, value: string, options?: any) {
-          try {
-            store.set({ name, value, ...options })
-          } catch {
-            /* noop */
-          }
+        set(name: string, value: string, options: CookieOptions) {
+          try { cookieStore.set({ name, value, ...options }) } catch {}
         },
-        remove(name: string, options?: any) {
-          try {
-            store.set({ name, value: '', expires: new Date(0), ...options })
-          } catch {
-            /* noop */
-          }
+        remove(name: string, options: CookieOptions) {
+          try { cookieStore.set({ name, value: '', ...options }) } catch {}
         },
       },
     }
